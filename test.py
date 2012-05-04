@@ -299,4 +299,6 @@ body {
   padding: 0;
 }
 '''))
-    SyosetuCom()(sys.argv[1], css_map, EPUBPackage(), None, None)
+    package = EPUBPackage()
+    package.spine.set_direction('rtl')
+    SyosetuCom()(sys.argv[1], css_map, package, None, None)
