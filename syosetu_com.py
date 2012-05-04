@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from epub import *
+from style import *
 import lxml.html, math, sys, urllib.request, re
 
 class SyosetuCom:
@@ -13,10 +14,8 @@ class SyosetuCom:
             if n.tail is not None: text += n.tail
         return text.strip()
     def __get_metadata(self, ncode):
-        '''
-        return (title, author, description, keywords[space-separated],
-                start-date, last modified, type[連載,短編], completed_flag)
-        '''
+        ''' return (title, author, description, keywords[space-separated],
+            start-date, last modified, type[連載,短編], completed_flag)    '''
         info_page = lxml.html.parse('http://ncode.syosetu.com/novelview/infotop/ncode/' + ncode)
         prev_caption = None
         title, author, description, keywords, start_date, last_modified = None, None, None, None, None, None
@@ -212,58 +211,11 @@ class SyosetuCom:
 
         package.save(ncode + '.epub')
 
-class StylesheetMap:
-    def __init__(self, default_css, cover_css = None, toc_css = None, page_css = None):
-        self.default = default_css
-        self.cover = cover_css if cover_css is not None else self.default
-        self.toc = toc_css if toc_css is not None else self.default
-        self.page = page_css if page_css is not None else self.default
-
-    def default_css(self): return self.default[0]
-    def cover_css(self): return self.cover[0]
-    def toc_css(self): return self.toc[0]
-    def page_css(self): return self.page[0]
-
-    def output(self, manifest):
-        css_list = (self.default, self.cover, self.toc, self.page)
-        wrote_set = set()
-        for css in css_list:
-            if css[0] in wrote_set: continue
-            wrote_set.add(css[0])
-            manifest.add_item(css[0], 'text/css', css[1].encode('UTF-8'))
-
 if __name__ == '__main__':
     if len(sys.argv) != 2:
-        usage()
+        print('usage: %s [ncode (example: n0000a)]' % (sys.argv[0],))
         quit()
-
-    css_map = StylesheetMap(('style.css',
-'''html {
-  -epub-writing-mode: vertical-rl;
-  direction: ltr;
-  unicode-bidi:bidi-override;
-}
-ol {
-  list-style-type: none;
-  padding-top: 0.5em;
-  padding-left: 1em;
-}
-ol ol {
-  list-style-type: none;
-  padding-top: 1em;
-}
-h2, h3, h4, h5, h6 {
-  font-size: medium;
-}
-p {
-  margin: 0;
-  line-height: 140%;
-}
-body {
-  margin: 0;
-  padding: 0;
-}
-'''))
+    css_map = StylesheetMap(('style.css', SimpleVerticalWritingStyle))
     package = EPUBPackage()
     package.spine.set_direction('rtl')
     SyosetuCom()(sys.argv[1], css_map, package, None, None)
