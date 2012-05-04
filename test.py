@@ -70,17 +70,41 @@ class SyosetuCom:
             writer.text(title)
             writer.end()
         prev_is_empty_p = False
+        paragraph_open = False
         for n in novel_view.iter():
+            if n.tag in ('ruby'):
+                prev_is_empty_p = False
+                if not paragraph_open:
+                    paragraph_open = True
+                    writer.start('p')
+                if n.tag == 'ruby':
+                    writer.start('ruby')
+                    for ruby_child in n.iter():
+                        if ruby_child.text is None: continue
+                        writer.start(ruby_child.tag)
+                        writer.text(ruby_child.text)
+                        writer.end()
+                    writer.end()
+                continue
+
+            # ignore
+            if n.tag in ('rb', 'rt', 'rp'):
+                continue
+
+            if paragraph_open and n.tag == 'br':
+                writer.end()
+                paragraph_open = False
             text = n.text
             if text is None: text = n.tail
             if text is None and prev_is_empty_p: continue
-            writer.start('p')
+            if not paragraph_open:
+                writer.start('p')
+                paragraph_open = True
             if text is not None:
                 writer.text(text.strip())
                 prev_is_empty_p = False
             else:
                 prev_is_empty_p = True
-            writer.end()
         writer.end()
         package.manifest.add_item(filename, 'application/xhtml+xml', str(writer).encode('UTF-8'))
 
