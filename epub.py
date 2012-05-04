@@ -311,7 +311,7 @@ class EPUBManifest:
                 return id
 
     def add_item(self, href, media_type, file_or_bytes,
-                 id = None,
+                 id = None, spine_pos = None,
                  add_to_spine=None, is_toc = False,
                  fallback=None, properties=None, media_overlay=None):
         if add_to_spine is None:
@@ -323,7 +323,7 @@ class EPUBManifest:
         if id in self.id_set: raise MetadataError("duplicate id")
         if is_toc and self.spine.toc is not None: raise MetadataError('already added TOC')
         if properties is not None: properties = self.__check_properties(properties)
-        if add_to_spine: self.spine.add_itemref(id)
+        if add_to_spine: self.spine.add_itemref(id, pos=spine_pos)
         if is_toc: self.spine.toc = id
         self.id_set.add(id)
         self.package.add_file(href, file_or_bytes)
@@ -345,6 +345,16 @@ class EPUBManifest:
         # fallback id check
         # properties check
         pass
+
+    def find_spine_pos(self, filename):
+        id = self.lookup_id(filename)
+        if id is None:
+            return -1
+        for i in range(len(self.spine.itemrefs)):
+            if self.spine.itemrefs[i]['idref'] == id:
+                return i
+        return -1
+
     def lookup_id(self, filename):
         for item in self.items:
             if item['href'] == filename:
@@ -369,11 +379,12 @@ class EPUBSpine:
         self.refset = set()
     def set_direction(self, dir):
         self.page_direction = dir
-    def add_itemref(self, idref):
+    def add_itemref(self, idref, pos = None):
         if idref in self.refset:
             raise MetadataError('duplicate idref')
         self.refset.add(idref)
-        self.itemrefs.append({'idref':idref})
+        if pos is None: pos = len(self.itemrefs)
+        self.itemrefs.insert(pos, {'idref':idref})
     def write_xml(self, writer):
         writer.start('spine')
         if self.toc is not None: writer.att('toc', self.toc)

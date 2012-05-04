@@ -40,7 +40,7 @@ class SyosetuCom:
                 if novel_type != '短編': novel_type = '連載'
         return (title, author, description, keywords, start_date, last_modified, novel_type, complete_flag)
 
-    def __process_page(self, url, title, title_tagname, filename, package, page_decorator):
+    def __process_page(self, url, title, title_tagname, filename, css_file, package, page_decorator):
         page_tree = lxml.html.parse(url)
         def find_novel_view():
             for div in page_tree.iter('div'):
@@ -57,6 +57,12 @@ class SyosetuCom:
         writer.start('title')
         writer.text(title)
         writer.end()
+        if css_file is not None:
+            writer.start('link')
+            writer.att('rel', 'stylesheet')
+            writer.att('type', 'text/css')
+            writer.att('href', css_file)
+            writer.end()
         writer.end()
         writer.start('body')
         if title_tagname is not None:
@@ -78,17 +84,17 @@ class SyosetuCom:
         writer.end()
         package.manifest.add_item(filename, 'application/xhtml+xml', str(writer).encode('UTF-8'))
 
-    def __process_short_story(self, ncode, metadata_tuple, package, page_decorator):
+    def __process_short_story(self, ncode, metadata_tuple, css_map, package, page_decorator):
         (title, author, description, keywords, start_date, last_modified,
          novel_type, complete_flag) = metadata_tuple
         meta = package.metadata
-        self.__process_page('http://ncode.syosetu.com/' + ncode, title, None, 'novel.xhtml', package, page_decorator)
-    def __process_serial_story(self, ncode, metadata_tuple, package, toc_decorator, page_decorator):
+        self.__process_page('http://ncode.syosetu.com/' + ncode, title, None, 'novel.xhtml', css_map.page_css(), package, page_decorator)
+    def __process_serial_story(self, ncode, metadata_tuple, css_map, package, toc_decorator, page_decorator):
         toc_page = lxml.html.parse('http://ncode.syosetu.com/' + ncode)
         def find_novel_sublist():
             for div in toc_page.iter('div'):
                 if 'class' in div.attrib and div.attrib['class'] == 'novel_sublist': return div
-        nav = EPUBNav('toc', '目次', 'ja', 'style.css')
+        nav = EPUBNav('toc', '目次', 'ja', css_map.toc_css())
         child = None
         num_of_files = 0
         for td in find_novel_sublist().iter('td'):
@@ -107,7 +113,7 @@ class SyosetuCom:
                 filename = nav_node.link.zfill(filename_width) + '.xhtml'
                 url = 'http://ncode.syosetu.com/' + ncode + '/' + nav_node.link + '/'
                 nav_node.link = filename
-                self.__process_page(url, nav_node.title, 'h' + str(indent), filename, package, page_decorator)
+                self.__process_page(url, nav_node.title, 'h' + str(indent), filename, css_map.page_css(), package, page_decorator)
             next_indent = indent + 1
             if next_indent > 6: next_indent = 6
             for child in nav_node.children:
@@ -117,7 +123,7 @@ class SyosetuCom:
         package.manifest.add_item('toc.ncx', 'application/x-dtbncx+xml', str(compatible_toc).encode('UTF-8'),
                                   is_toc=True)
         package.manifest.add_item('toc.xhtml', 'application/xhtml+xml', nav.to_xml().encode('UTF-8'),
-                                  properties='nav')
+                                  spine_pos = package.manifest.find_spine_pos('cover.xhtml') + 1, properties='nav')
 
     def __process_cover(self, metadata_tuple, css_file, package):
         (title, author, description, keywords, start_date, last_modified,
@@ -163,7 +169,7 @@ class SyosetuCom:
 
         package.manifest.add_item('cover.xhtml', 'application/xhtml+xml', str(writer).encode('UTF-8'))
 
-    def __call__(self, ncode, package, toc_decorator, page_decorator):
+    def __call__(self, ncode, css_map, package, toc_decorator, page_decorator):
         metadata_tuple = self.__get_metadata(ncode)
         print(metadata_tuple)
 
@@ -177,16 +183,61 @@ class SyosetuCom:
         meta.add_dcmes_info(DCMESCreatorInfo(author, lang='ja'))
         meta.add_dcmes_info(DCMESInfo('description', description, lang='ja'))
 
-        self.__process_cover(metadata_tuple, None, package)
+        css_map.output(package.manifest)
+        self.__process_cover(metadata_tuple, css_map.cover_css(), package)
         if metadata_tuple[6] == '短編':
-            self.__process_short_story(ncode, metadata_tuple, package, page_decorator)
+            self.__process_short_story(ncode, metadata_tuple, css_map, package, page_decorator)
         else:
-            self.__process_serial_story(ncode, metadata_tuple, package, toc_decorator, page_decorator)
+            self.__process_serial_story(ncode, metadata_tuple, css_map, package, toc_decorator, page_decorator)
 
         package.save(ncode + '.epub')
+
+class StylesheetMap:
+    def __init__(self, default_css, cover_css = None, toc_css = None, page_css = None):
+        self.default = default_css
+        self.cover = cover_css if cover_css is not None else self.default
+        self.toc = toc_css if toc_css is not None else self.default
+        self.page = page_css if page_css is not None else self.default
+
+    def default_css(self): return self.default[0]
+    def cover_css(self): return self.cover[0]
+    def toc_css(self): return self.toc[0]
+    def page_css(self): return self.page[0]
+
+    def output(self, manifest):
+        css_list = (self.default, self.cover, self.toc, self.page)
+        wrote_set = set()
+        for css in css_list:
+            if css[0] in wrote_set: continue
+            wrote_set.add(css[0])
+            manifest.add_item(css[0], 'text/css', css[1].encode('UTF-8'))
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
         usage()
         quit()
-    SyosetuCom()(sys.argv[1], EPUBPackage(), None, None)
+
+    css_map = StylesheetMap(('style.css',
+'''html {
+  -epub-writing-mode: vertical-rl;
+  direction: ltr;
+  unicode-bidi:bidi-override;
+}
+ol {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+h2, h3, h4, h5, h6 {
+  font-size: medium;
+}
+p {
+  margin: 0;
+  line-height: 140%;
+}
+body {
+  margin: 0;
+  padding: 0;
+}
+'''))
+    SyosetuCom()(sys.argv[1], css_map, EPUBPackage(), None, None)
