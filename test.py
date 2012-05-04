@@ -94,9 +94,12 @@ class SyosetuCom:
                     writer.start('ruby')
                     for ruby_child in n.iter():
                         if ruby_child.text is None: continue
-                        writer.start(ruby_child.tag)
-                        writer.text(ruby_child.text)
-                        writer.end()
+                        if ruby_child.tag in ('rt', 'rp'):
+                            writer.start(ruby_child.tag)
+                            writer.text(ruby_child.text)
+                            writer.end()
+                        else:
+                            writer.text(ruby_child.text)
                     writer.end()
                 elif n.tag == 'img':
                     if 'src' in n.attrib:
