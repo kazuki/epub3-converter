@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 
 from epub import *
-import lxml.html, math, sys
+import lxml.html, math, sys, urllib.request, re
 
 class SyosetuCom:
+    image_url_regex = re.compile('[^0-9]*([0-9]+)\..*/icode/(i[0-9a-zA-Z]+)')
     def __get_all_text(self, node):
         text = ''
         for n in node.iter():
@@ -40,6 +41,18 @@ class SyosetuCom:
                 if novel_type != '短編': novel_type = '連載'
         return (title, author, description, keywords, start_date, last_modified, novel_type, complete_flag)
 
+    def __process_image(self, url):
+        '''return (filename, mime, bytes)'''
+        m = self.image_url_regex.match(url)
+        filename = m.group(1) + '_' + m.group(2)
+        with urllib.request.urlopen(url) as f:
+            mime = f.info()['Content-Type']
+            if mime == 'image/gif': filename += '.gif'
+            elif mime == 'image/jpeg': filename += '.jpg'
+            elif mime == 'image/png': filename += '.png'
+            else: mime = None
+            return (filename, mime, f.read())
+
     def __process_page(self, url, title, title_tagname, filename, css_file, package, page_decorator):
         page_tree = lxml.html.parse(url)
         def find_novel_view():
@@ -72,7 +85,7 @@ class SyosetuCom:
         prev_is_empty_p = False
         paragraph_open = False
         for n in novel_view.iter():
-            if n.tag in ('ruby'):
+            if n.tag in ('ruby', 'img'):
                 prev_is_empty_p = False
                 if not paragraph_open:
                     paragraph_open = True
@@ -85,6 +98,16 @@ class SyosetuCom:
                         writer.text(ruby_child.text)
                         writer.end()
                     writer.end()
+                elif n.tag == 'img':
+                    if 'src' in n.attrib:
+                        (imgfilename, mime, data) = self.__process_image(n.attrib['src'])
+                        if mime is not None and data is not None and imgfilename is not None:
+                            package.manifest.add_item(imgfilename, mime, data)
+                            writer.start('img')
+                            writer.att('src', imgfilename)
+                            if 'alt' in n.attrib:
+                                writer.att('alt', n.attrib['alt'])
+                            writer.end()
                 continue
 
             # ignore
