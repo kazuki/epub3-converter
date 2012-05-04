@@ -5,6 +5,7 @@ from io import RawIOBase, IOBase
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED, ZIP_STORED
 import xml.etree.ElementTree as ET
 import xml.sax.saxutils as SAX
+import datetime
 
 class SimpleXMLWriter:
     def __init__(self):
@@ -132,6 +133,11 @@ class MetadataError(Exception):
         return self.msg
 
 class DCMESInfo:
+    def datetime_to_str(dt):
+        dt = dt.replace(microsecond=0)
+        if dt.utcoffset() is not None:
+            dt = (dt - dt.utcoffset())
+        return dt.isoformat() + 'Z'
     def __init__(self, name, content, lang=None, dir=None):
         self.name = name
         self.content = content
@@ -226,8 +232,8 @@ class DCMESCreatorInfo(DCMESInfo):
     def set_role(self, scheme, role): self._set_role(scheme, role)
 
 class DCMESDateInfo(DCMESInfo):
-    def __init__(self, datetime):
-        DCMESInfo.__init__(self, 'date', datetime)
+    def __init__(self, dt):
+        DCMESInfo.__init__(self, 'date', DCMESInfo.datetime_to_str(dt))
 
 class DCMESSourceInfo(DCMESInfo):
     def __init__(self, source):
@@ -246,8 +252,10 @@ class EPUBMetadata:
         return self.add_dcmes_info(DCMESTitleInfo(title, lang, dir))
     def add_language(self, lang):
         return self.add_dcmes_info(DCMESLanguageInfo(lang))
-    def add_modified(self, datetime):
-        self.add_meta('dcterms:modified', datetime)
+    def add_modified(self, dt):
+        self.add_date_term('modified', dt)
+    def add_date_term(self, term, dt):
+        self.add_meta('dcterms:' + term, DCMESInfo.datetime_to_str(dt))
 
     def add_dcmes_info(self, dcmes_info):
         self.dcmes.append(dcmes_info)

@@ -39,11 +39,25 @@ class TextToEpub:
         return str(writer)
 
     def __call__(self, title, author, filelist, css_map, package):
+        def find_date_info():
+            created = datetime.datetime.max
+            modified = datetime.datetime.min
+            for path in filelist:
+                if not os.path.isfile(path): continue
+                s = os.stat(path)
+                c = datetime.datetime.utcfromtimestamp(s.st_ctime)
+                m = datetime.datetime.utcfromtimestamp(s.st_mtime)
+                if c < created: created = c
+                if modified < m: modified = m
+            return (created, modified)
         meta = package.metadata
         meta.add_title(title, lang='ja')
         meta.add_language('ja')
         meta.add_identifier(str(uuid.uuid4()), unique_id=True)
-        meta.add_modified('2012-05-04T04:14:53Z') # TODO
+        created, modified = find_date_info()
+        meta.add_modified(modified)
+        meta.add_date_term('created', created)
+        meta.add_dcmes_info(DCMESDateInfo(datetime.datetime.utcnow()))
         meta.add_dcmes_info(DCMESCreatorInfo(author, lang='ja'))
 
         package.manifest.add_item('cover.xhtml', 'application/xhtml+xml',

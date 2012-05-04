@@ -3,7 +3,7 @@
 
 from epub import *
 from style import *
-import lxml.html, math, sys, urllib.request, re
+import lxml.html, math, sys, urllib.request, re, datetime
 
 class SyosetuCom:
     image_url_regex = re.compile('[^0-9]*([0-9]+)\..*/icode/(i[0-9a-zA-Z]+)')
@@ -38,6 +38,15 @@ class SyosetuCom:
                 novel_type = td.text.strip()
                 if novel_type.startswith('連載'): complete_flag = False
                 if novel_type != '短編': novel_type = '連載'
+
+        def to_datetime(s):
+            s2 = ''
+            for c in s:
+                if c >= '0' and c <= '9':
+                    s2 += c
+            return datetime.datetime(int(s2[0:4]), int(s2[4:6]), int(s2[6:8]), int(s2[8:10]), int(s2[10:12]))
+        start_date = to_datetime(start_date)
+        last_modified = to_datetime(last_modified)
         return (title, author, description, keywords, start_date, last_modified, novel_type, complete_flag)
 
     def __process_image(self, url):
@@ -198,7 +207,9 @@ class SyosetuCom:
         meta.add_title(title, lang='ja')
         meta.add_language('ja')
         meta.add_identifier('http://ncode.syosetu.com/' + ncode, unique_id=True)
-        meta.add_modified('2012-05-04T04:14:53Z') # TODO
+        meta.add_modified(last_modified)
+        meta.add_date_term('created', start_date)
+        meta.add_dcmes_info(DCMESDateInfo(datetime.datetime.utcnow()))
         meta.add_dcmes_info(DCMESCreatorInfo(author, lang='ja'))
         meta.add_dcmes_info(DCMESInfo('description', description, lang='ja'))
 
