@@ -478,36 +478,21 @@ class EPUBCompatibleNav:
         self.lang = meta.get_dcmes_text('language')
         self.navs = navs
         self.manifest = manifest
-    def __output_navMap(self, nav, writer):
+    def __output_navMap(self, nav, writer, autoid):
         writer.start('navMap')
         def output_navPoint(curnav):
-            id = None
-            link = curnav.link
-            if link is None and len(curnav.children) > 0:
-                def recurse_first_link(tmp):
-                    if tmp.link is not None:
-                        return tmp.link
-                    for tmp2 in tmp.children:
-                        ret = recurse_first_link(tmp2)
-                        if ret is not None:
-                            return ret
-                    return None
-                link = recurse_first_link(curnav)
-            if link is not None:
-                id = self.manifest.lookup_id(link)
-            if link is None or id is None:
-                return
-
+            autoid[0] += 1
             writer.start('navPoint')
-            writer.att('id', id)
+            writer.att('id', 'navpoint' + str(autoid[0]))
             writer.start('navLabel')
             writer.start('text')
             writer.text(curnav.title)
             writer.end()
             writer.end()
-            writer.start('content')
-            writer.att('src', link)
-            writer.end()
+            if curnav.link is not None:
+                writer.start('content')
+                writer.att('src', curnav.link)
+                writer.end()
             for child in curnav.children:
                 output_navPoint(child)
             writer.end()
@@ -533,7 +518,8 @@ class EPUBCompatibleNav:
         writer.end()
         writer.end()
 
+        autoid = [0]
         for nav in self.navs:
             if nav.type == 'toc':
-                self.__output_navMap(nav, writer)
+                self.__output_navMap(nav, writer, autoid)
         return str(writer)
