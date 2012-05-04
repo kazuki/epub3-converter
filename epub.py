@@ -481,20 +481,33 @@ class EPUBCompatibleNav:
     def __output_navMap(self, nav, writer):
         writer.start('navMap')
         def output_navPoint(curnav):
+            id = None
+            link = curnav.link
+            if link is None and len(curnav.children) > 0:
+                def recurse_first_link(tmp):
+                    if tmp.link is not None:
+                        return tmp.link
+                    for tmp2 in tmp.children:
+                        ret = recurse_first_link(tmp2)
+                        if ret is not None:
+                            return ret
+                    return None
+                link = recurse_first_link(curnav)
+            if link is not None:
+                id = self.manifest.lookup_id(link)
+            if link is None or id is None:
+                return
+
             writer.start('navPoint')
-            if curnav.link is not None:
-                id = self.manifest.lookup_id(curnav.link)
-                if id is not None:
-                    writer.att('id', id)
+            writer.att('id', id)
             writer.start('navLabel')
             writer.start('text')
             writer.text(curnav.title)
             writer.end()
             writer.end()
-            if curnav.link is not None:
-                writer.start('content')
-                writer.att('src', curnav.link)
-                writer.end()
+            writer.start('content')
+            writer.att('src', link)
+            writer.end()
             for child in curnav.children:
                 output_navPoint(child)
             writer.end()
