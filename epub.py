@@ -23,10 +23,12 @@ class SimpleXMLWriter:
             self.stack.append(self.current)
             self.current = ET.SubElement(self.current, name)
         
-    def __pop(self):
-        self.current = self.stack.pop()
-
-    def start(self, name): self.__push(name)
+    def __pop(self): self.current = self.stack.pop()
+    def start(self, name, atts={}, text=None):
+        self.__push(name)
+        for key,value in atts.items():
+            self.att(key,value)
+        if text is not None: self.text(text)
     def end(self): self.__pop()
     def text(self, text):
         if self.current.text is None:
@@ -35,6 +37,9 @@ class SimpleXMLWriter:
             self.current.text += text
     def att(self, name, value):
         self.current.attrib[name] = value
+    def element(self, name, atts={}, text=None):
+        self.start(name, atts, text)
+        self.end()
 
     def __to_string(self, node, indent):
         xml = indent + '<' + node.tag
@@ -88,9 +93,7 @@ class EPUBPackage:
 
     def __create_opf(self):
         writer = SimpleXMLWriter()
-        writer.start('package')
-        writer.att('xmlns', 'http://www.idpf.org/2007/opf')
-        writer.att('version', '3.0')
+        writer.start('package', atts={'xmlns':'http://www.idpf.org/2007/opf', 'version':'3.0'})
         if self.metadata.unique_id is not None:
             writer.att('unique-identifier', 'BookId')
         self.metadata.write_xml(writer)
@@ -170,8 +173,7 @@ class DCMESInfo:
             writer.text(self.content)
         writer.end()
         for prop in self.props:
-            writer.start('meta')
-            writer.att('refines', '#' + id)
+            writer.start('meta', atts={'refines':'#' + id})
             for (key,value) in prop.items():
                 if value is None or key[0] == '_': continue
                 writer.att(key, value)
@@ -268,8 +270,7 @@ class EPUBMetadata:
         return None
 
     def write_xml(self, writer):
-        writer.start('metadata')
-        writer.att('xmlns:dc', 'http://purl.org/dc/elements/1.1/')
+        writer.start('metadata', atts={'xmlns:dc':'http://purl.org/dc/elements/1.1/'})
         dcmes_id_map = {}
         for dcmes_info in self.dcmes:
             id = dcmes_info.name
@@ -433,31 +434,20 @@ class EPUBNav(EPUBNavNode):
     def to_xml(self):
         writer = SimpleXMLWriter()
 
-        writer.start('html')
-        writer.att('xmlns', 'http://www.w3.org/1999/xhtml')
-        writer.att('xmlns:epub', 'http://www.idpf.org/2007/ops')
+        writer.start('html', atts={'xmlns':'http://www.w3.org/1999/xhtml', 'xmlns:epub':'http://www.idpf.org/2007/ops'})
         writer.start('head')
-        writer.start('title')
-        writer.text(self.title)
-        writer.end()
+        writer.element('title', text=self.title)
         if self.css is not None:
-            writer.start('link')
-            writer.att('rel', 'stylesheet')
-            writer.att('type', 'text/css')
-            writer.att('href', self.css)
-            writer.end()
+            writer.element('link', atts={'rel':'stylesheet', 'type':'text/css', 'href':self.css})
         writer.end()
         writer.start('body')
 
         if self.head_write_func is not None:
             self.head_write_func(self, writer)
         else:
-            writer.start('h1')
-            writer.text(self.title)
-            writer.end()
+            writer.element('h1', text=self.title)
 
-        writer.start('nav')
-        writer.att('epub:type', self.type)
+        writer.start('nav', atts={'epub:type':self.type})
         if len(self.children) > 0:
             writer.start('ol')
             for child in self.children:
@@ -482,17 +472,12 @@ class EPUBCompatibleNav:
         writer.start('navMap')
         def output_navPoint(curnav):
             autoid[0] += 1
-            writer.start('navPoint')
-            writer.att('id', 'navpoint' + str(autoid[0]))
+            writer.start('navPoint', atts={'id':'navpoint' + str(autoid[0])})
             writer.start('navLabel')
-            writer.start('text')
-            writer.text(curnav.title)
-            writer.end()
+            writer.element('text', text=curnav.title)
             writer.end()
             if curnav.link is not None:
-                writer.start('content')
-                writer.att('src', curnav.link)
-                writer.end()
+                writer.element('content', atts={'src':curnav.link})
             for child in curnav.children:
                 output_navPoint(child)
             writer.end()
@@ -502,20 +487,13 @@ class EPUBCompatibleNav:
     def __str__(self):
         writer = SimpleXMLWriter()
         writer.doc_type = '<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">'
-        writer.start('ncx')
-        writer.att('xmlns', 'http://www.daisy.org/z3986/2005/ncx/')
-        writer.att('xml:lang', self.lang)
-        writer.att('version', '2005-1')
+        writer.start('ncx', atts={'xmlns':'http://www.daisy.org/z3986/2005/ncx/',
+                                  'xml:lang':self.lang, 'version':'2005-1'})
         writer.start('head')
-        writer.start('meta')
-        writer.att('name', 'dtb:uid')
-        writer.att('content', self.uid)
-        writer.end()
+        writer.element('meta', atts={'name':'dtb:uid', 'content':self.uid})
         writer.end()
         writer.start('docTitle')
-        writer.start('text')
-        writer.text(self.title)
-        writer.end()
+        writer.element('text', text=self.title)
         writer.end()
 
         autoid = [0]

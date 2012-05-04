@@ -63,25 +63,15 @@ class SyosetuCom:
         novel_view = find_novel_view()
         writer = SimpleXMLWriter()
         writer.doc_type = '<!DOCTYPE html>'
-        writer.start('html')
-        writer.att('xmlns', 'http://www.w3.org/1999/xhtml')
-        writer.att('xml:lang', 'ja')
+        writer.start('html', atts={'xmlns':'http://www.w3.org/1999/xhtml', 'xml:lang':'ja'})
         writer.start('head')
-        writer.start('title')
-        writer.text(title)
-        writer.end()
+        writer.element('title', text=title)
         if css_file is not None:
-            writer.start('link')
-            writer.att('rel', 'stylesheet')
-            writer.att('type', 'text/css')
-            writer.att('href', css_file)
-            writer.end()
+            writer.element('link', atts={'rel':'stylesheet', 'type':'text/css', 'href':css_file})
         writer.end()
         writer.start('body')
         if title_tagname is not None:
-            writer.start(title_tagname)
-            writer.text(title)
-            writer.end()
+            writer.element(title_tagname, text=title)
         prev_is_empty_p = False
         paragraph_open = False
         for n in novel_view.iter():
@@ -95,9 +85,7 @@ class SyosetuCom:
                     for ruby_child in n.iter():
                         if ruby_child.text is None: continue
                         if ruby_child.tag in ('rt', 'rp'):
-                            writer.start(ruby_child.tag)
-                            writer.text(ruby_child.text)
-                            writer.end()
+                            writer.element(ruby_child.tag, text=ruby_child.text)
                         else:
                             writer.text(ruby_child.text)
                     writer.end()
@@ -106,8 +94,7 @@ class SyosetuCom:
                         (imgfilename, mime, data) = self.__process_image(n.attrib['src'])
                         if mime is not None and data is not None and imgfilename is not None:
                             package.manifest.add_item(imgfilename, mime, data)
-                            writer.start('img')
-                            writer.att('src', imgfilename)
+                            writer.start('img', atts={'src':imgfilename})
                             if 'alt' in n.attrib:
                                 writer.att('alt', n.attrib['alt'])
                             writer.end()
@@ -188,43 +175,18 @@ class SyosetuCom:
          novel_type, complete_flag) = metadata_tuple
         writer = SimpleXMLWriter()
         writer.doc_type = '<!DOCTYPE html>'
-        writer.start('html')
-        writer.att('xmlns', 'http://www.w3.org/1999/xhtml')
-        writer.att('xml:lang', 'ja')
+        writer.start('html', atts={'xmlns':'http://www.w3.org/1999/xhtml', 'xml:lang':'ja'})
         writer.start('head')
-        writer.start('title')
-        writer.text(title)
-        writer.end()
+        writer.element('title', text=title)
         if css_file is not None:
-            writer.start('link')
-            writer.att('rel', 'stylesheet')
-            writer.att('type', 'text/css')
-            writer.att('href', css_file)
-            writer.end()
+            writer.element('link', atts={'rel':'stylesheet', 'type':'text/css', 'href':css_file})
         writer.end()
         writer.start('body')
-
-        writer.start('h1')
-        writer.att('class', 'cover title')
-        writer.text(title)
-        writer.end()
-
-        writer.start('h2')
-        writer.att('class', 'cover author')
-        writer.text('作者:')
-        writer.end()
-        writer.start('p')
-        writer.text(author)
-        writer.end()
-
-        writer.start('h2')
-        writer.att('class', 'cover outline')
-        writer.text('あらすじ:')
-        writer.end()
-        writer.start('p')
-        writer.text(description)
-        writer.end()
-
+        writer.element('h1', atts={'class':'cover title'}, text=title)
+        writer.element('h2', atts={'class':'cover author'}, text='作者:')
+        writer.element('p', text=author)
+        writer.element('h2', atts={'class':'cover outline'}, text='あらすじ:')
+        writer.element('p', text=description)
         package.manifest.add_item('cover.xhtml', 'application/xhtml+xml', str(writer).encode('UTF-8'))
 
     def __call__(self, ncode, css_map, package, toc_decorator, page_decorator):
