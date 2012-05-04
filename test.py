@@ -280,8 +280,12 @@ if __name__ == '__main__':
 }
 ol {
   list-style-type: none;
-  padding: 0;
-  margin: 0;
+  padding-top: 0.5em;
+  padding-left: 1em;
+}
+ol ol {
+  list-style-type: none;
+  padding-top: 1em;
 }
 h2, h3, h4, h5, h6 {
   font-size: medium;
