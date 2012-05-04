@@ -134,8 +134,16 @@ class SyosetuCom:
     def __process_short_story(self, ncode, metadata_tuple, css_map, package, page_decorator):
         (title, author, description, keywords, start_date, last_modified,
          novel_type, complete_flag) = metadata_tuple
-        meta = package.metadata
+
+        nav = EPUBNav('toc', '目次', 'ja', css_map.toc_css())
+        nav.add_child(title, link = 'novel.xhtml')
+        compatible_toc = EPUBCompatibleNav([nav], package.metadata, package.manifest)
         self.__process_page('http://ncode.syosetu.com/' + ncode, title, None, 'novel.xhtml', css_map.page_css(), package, page_decorator)
+        package.manifest.add_item('toc.ncx', 'application/x-dtbncx+xml', str(compatible_toc).encode('UTF-8'),
+                                  is_toc=True)
+        package.manifest.add_item('toc.xhtml', 'application/xhtml+xml', nav.to_xml().encode('UTF-8'),
+                                  add_to_spine=False, properties='nav')
+
     def __process_serial_story(self, ncode, metadata_tuple, css_map, package, toc_decorator, page_decorator):
         toc_page = lxml.html.parse('http://ncode.syosetu.com/' + ncode)
         def find_novel_sublist():
