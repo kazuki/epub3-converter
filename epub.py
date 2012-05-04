@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from io import RawIOBase, IOBase
-from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
+from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED, ZIP_STORED
 import xml.etree.ElementTree as ET
 import xml.sax.saxutils as SAX
 
@@ -10,6 +10,7 @@ class SimpleXMLWriter:
     def __init__(self):
         self.root = None
         self.current = None
+        self.doc_type = None
         self.stack = []
 
     def __push(self, name):
@@ -55,7 +56,10 @@ class SimpleXMLWriter:
         return xml
         
     def __str__(self):
-        return '<?xml version="1.0" encoding="utf-8" ?>\n' + \
+        doc_type = self.doc_type
+        if doc_type is None: doc_type = ''
+        else: doc_type = doc_type.strip() + '\n'
+        return '<?xml version="1.0" encoding="utf-8" ?>\n' + doc_type + \
             self.__to_string(self.root, '')
 
 class EPUBPackage:
@@ -87,6 +91,8 @@ class EPUBPackage:
         writer.start('package')
         writer.att('xmlns', 'http://www.idpf.org/2007/opf')
         writer.att('version', '3.0')
+        if self.metadata.unique_id is not None:
+            writer.att('unique-identifier', 'BookId')
         self.metadata.write_xml(writer)
         self.manifest.write_xml(writer)
         self.spine.write_xml(writer)
@@ -99,7 +105,7 @@ class EPUBPackage:
         rootdir = "OPBES/"
         opf_path = rootdir + "content.opf"
         with ZipFile(file, "w", compression) as epub:
-            epub.writestr("mimetype", "application/epub+zip".encode("UTF-8"))
+            epub.writestr("mimetype", "application/epub+zip".encode("UTF-8"), compress_type=ZIP_STORED)
             epub.writestr("META-INF/container.xml",
                           self.__create_container_xml(opf_path).encode("UTF-8"))
             epub.writestr(opf_path, self.__create_opf())
@@ -227,6 +233,7 @@ class DCMESSourceInfo(DCMESInfo):
 
 class EPUBMetadata:
     def __init__(self):
+        self.unique_id = None
         self.dcmes = []
         self.meta = []
         self.link = []
@@ -242,6 +249,9 @@ class EPUBMetadata:
 
     def add_dcmes_info(self, dcmes_info):
         self.dcmes.append(dcmes_info)
+        if self.unique_id is None and isinstance(dcmes_info, DCMESIdentifierInfo) and dcmes_info.unique_id:
+            self.unique_id = dcmes_info
+            dcmes_info.set_att('id', 'BookId')
         return dcmes_info
     def add_meta(self, propname, content, scheme = None):
         self.meta.append({'property':propname, '__content__': content, 'scheme': scheme})
@@ -250,6 +260,12 @@ class EPUBMetadata:
 
     def validate(self):
         pass
+
+    def get_dcmes_text(self, name):
+        for dcmes_info in self.dcmes:
+            if dcmes_info.name == name and dcmes_info.content is not None:
+                return dcmes_info.content
+        return None
 
     def write_xml(self, writer):
         writer.start('metadata')
@@ -329,6 +345,11 @@ class EPUBManifest:
         # fallback id check
         # properties check
         pass
+    def lookup_id(self, filename):
+        for item in self.items:
+            if item['href'] == filename:
+                return item['id']
+        return None
 
     def write_xml(self, writer):
         writer.start('manifest')
@@ -364,6 +385,131 @@ class EPUBSpine:
             writer.end()
         writer.end()
 
-class EPUBCompatibleNavigation:
-    def __init__(self):
-        pass
+class EPUBNavNode:
+    def __init__(self, title, link=None):
+        self.title = title
+        self.link = link
+        self.children = []
+    def add_child(self, title, link=None):
+        node = EPUBNavNode(title, link)
+        self.children.append(node)
+        return node
+    def to_xml(self, writer):
+        if self.link is None:
+            writer.start('span')
+        else:
+            writer.start('a')
+            writer.att('href', self.link)
+        writer.text(self.title)
+        writer.end()
+        if len(self.children) > 0:
+            writer.start('ol')
+            for child in self.children:
+                writer.start('li')
+                child.to_xml(writer)
+                writer.end()
+            writer.end()
+
+class EPUBNav(EPUBNavNode):
+    def __init__(self, type, title, lang, css_file):
+        EPUBNavNode.__init__(self, title)
+        self.type = type
+        self.lang = lang
+        self.css = css_file
+        self.head_write_func = None
+        self.tail_write_func = None
+
+    def to_xml(self):
+        writer = SimpleXMLWriter()
+
+        writer.start('html')
+        writer.att('xmlns', 'http://www.w3.org/1999/xhtml')
+        writer.att('xmlns:epub', 'http://www.idpf.org/2007/ops')
+        writer.start('head')
+        writer.start('title')
+        writer.text(self.title)
+        writer.end()
+        if self.css is not None:
+            writer.start('link')
+            writer.att('rel', 'stylesheet')
+            writer.att('type', 'text/css')
+            writer.att('href', self.css)
+            writer.end()
+        writer.end()
+        writer.start('body')
+
+        if self.head_write_func is not None:
+            self.head_write_func(self, writer)
+        else:
+            writer.start('h1')
+            writer.text(self.title)
+            writer.end()
+
+        writer.start('nav')
+        writer.att('epub:type', self.type)
+        if len(self.children) > 0:
+            writer.start('ol')
+            for child in self.children:
+                writer.start('li')
+                child.to_xml(writer)
+                writer.end()
+            writer.end()
+        writer.end()
+
+        if self.tail_write_func is not None:
+            self.tail_write_func(self, writer)
+        return str(writer)
+
+class EPUBCompatibleNav:
+    def __init__(self, navs, meta, manifest):
+        self.title = meta.get_dcmes_text('title')
+        self.uid = meta.get_dcmes_text('identifier')
+        self.lang = meta.get_dcmes_text('language')
+        self.navs = navs
+        self.manifest = manifest
+    def __output_navMap(self, nav, writer):
+        writer.start('navMap')
+        def output_navPoint(curnav):
+            writer.start('navPoint')
+            if curnav.link is not None:
+                id = self.manifest.lookup_id(curnav.link)
+                if id is not None:
+                    writer.att('id', id)
+            writer.start('navLabel')
+            writer.start('text')
+            writer.text(curnav.title)
+            writer.end()
+            writer.end()
+            if curnav.link is not None:
+                writer.start('content')
+                writer.att('src', curnav.link)
+                writer.end()
+            for child in curnav.children:
+                output_navPoint(child)
+            writer.end()
+        for child in nav.children:
+            output_navPoint(child)
+        writer.end()
+    def __str__(self):
+        writer = SimpleXMLWriter()
+        writer.doc_type = '<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">'
+        writer.start('ncx')
+        writer.att('xmlns', 'http://www.daisy.org/z3986/2005/ncx/')
+        writer.att('xml:lang', self.lang)
+        writer.att('version', '2005-1')
+        writer.start('head')
+        writer.start('meta')
+        writer.att('name', 'dtb:uid')
+        writer.att('content', self.uid)
+        writer.end()
+        writer.end()
+        writer.start('docTitle')
+        writer.start('text')
+        writer.text(self.title)
+        writer.end()
+        writer.end()
+
+        for nav in self.navs:
+            if nav.type == 'toc':
+                self.__output_navMap(nav, writer)
+        return str(writer)
