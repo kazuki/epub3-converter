@@ -44,7 +44,8 @@ class SyosetuCom:
             for c in s:
                 if c >= '0' and c <= '9':
                     s2 += c
-            return datetime.datetime(int(s2[0:4]), int(s2[4:6]), int(s2[6:8]), int(s2[8:10]), int(s2[10:12]))
+            return datetime.datetime(int(s2[0:4]), int(s2[4:6]), int(s2[6:8]), int(s2[8:10]), int(s2[10:12]),
+                                     tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
         start_date = to_datetime(start_date)
         last_modified = to_datetime(last_modified)
         return (title, author, description, keywords, start_date, last_modified, novel_type, complete_flag)

@@ -136,7 +136,7 @@ class DCMESInfo:
     def datetime_to_str(dt):
         dt = dt.replace(microsecond=0)
         if dt.utcoffset() is not None:
-            dt = (dt - dt.utcoffset())
+            dt = (dt - dt.utcoffset()).replace(tzinfo=None)
         return dt.isoformat() + 'Z'
     def __init__(self, name, content, lang=None, dir=None):
         self.name = name
