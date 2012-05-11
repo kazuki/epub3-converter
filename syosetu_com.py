@@ -62,7 +62,7 @@ class SyosetuCom:
             else: mime = None
             return (filename, mime, f.read())
 
-    def __process_page(self, url, title, title_tagname, filename, css_file, package, page_decorator):
+    def __process_page(self, url, title, title_tagname, filename, css_file, package):
         page_tree = lxml.html.parse(url)
         def find_novel_view():
             for div in page_tree.iter('div'):
@@ -71,12 +71,10 @@ class SyosetuCom:
                     return div
         novel_view = find_novel_view()
         writer = SimpleXMLWriter()
-        writer.doc_type = '<!DOCTYPE html>'
-        writer.start('html', atts={'xmlns':'http://www.w3.org/1999/xhtml', 'xml:lang':'ja'})
+        writer.write_xhtml_dtd_and_documentelement(lang='ja')
         writer.start('head')
         writer.element('title', text=title)
-        if css_file is not None:
-            writer.element('link', atts={'rel':'stylesheet', 'type':'text/css', 'href':css_file})
+        writer.write_link_stylesheet(css_file)
         writer.end()
         writer.start('body')
         if title_tagname is not None:
@@ -102,7 +100,7 @@ class SyosetuCom:
                     if 'src' in n.attrib:
                         (imgfilename, mime, data) = self.__process_image(n.attrib['src'])
                         if mime is not None and data is not None and imgfilename is not None:
-                            package.manifest.add_item(imgfilename, mime, data)
+                            package.manifest.add_item(imgfilename, data, media_type=mime)
                             writer.start('img', atts={'src':imgfilename})
                             if 'alt' in n.attrib:
                                 writer.att('alt', n.attrib['alt'])
@@ -128,22 +126,20 @@ class SyosetuCom:
             else:
                 prev_is_empty_p = True
         writer.end()
-        package.manifest.add_item(filename, 'application/xhtml+xml', str(writer).encode('UTF-8'))
+        package.manifest.add_item(filename, str(writer))
 
-    def __process_short_story(self, ncode, metadata_tuple, css_map, package, page_decorator):
+    def __process_short_story(self, ncode, metadata_tuple, css_map, package):
         (title, author, description, keywords, start_date, last_modified,
          novel_type, complete_flag) = metadata_tuple
 
         nav = EPUBNav('toc', '目次', 'ja', css_map.toc_css())
         nav.add_child(title, link = 'novel.xhtml')
         compatible_toc = EPUBCompatibleNav([nav], package.metadata, package.manifest)
-        self.__process_page('http://ncode.syosetu.com/' + ncode, title, None, 'novel.xhtml', css_map.page_css(), package, page_decorator)
-        package.manifest.add_item('toc.ncx', 'application/x-dtbncx+xml', str(compatible_toc).encode('UTF-8'),
-                                  is_toc=True)
-        package.manifest.add_item('toc.xhtml', 'application/xhtml+xml', nav.to_xml().encode('UTF-8'),
-                                  add_to_spine=False, properties='nav')
+        self.__process_page('http://ncode.syosetu.com/' + ncode, title, None, 'novel.xhtml', css_map.page_css(), package)
+        package.manifest.add_item('toc.ncx', str(compatible_toc), is_toc=True)
+        package.manifest.add_item('toc.xhtml', nav.to_xml(), add_to_spine=False, properties='nav')
 
-    def __process_serial_story(self, ncode, metadata_tuple, css_map, package, toc_decorator, page_decorator):
+    def __process_serial_story(self, ncode, metadata_tuple, css_map, package):
         toc_page = lxml.html.parse('http://ncode.syosetu.com/' + ncode)
         def find_novel_sublist():
             for div in toc_page.iter('div'):
@@ -167,38 +163,18 @@ class SyosetuCom:
                 filename = nav_node.link.zfill(filename_width) + '.xhtml'
                 url = 'http://ncode.syosetu.com/' + ncode + '/' + nav_node.link + '/'
                 nav_node.link = filename
-                self.__process_page(url, nav_node.title, 'h' + str(indent), filename, css_map.page_css(), package, page_decorator)
+                self.__process_page(url, nav_node.title, 'h' + str(indent), filename, css_map.page_css(), package)
             next_indent = indent + 1
             if next_indent > 6: next_indent = 6
             for child in nav_node.children:
                 process_page(child, next_indent)
         process_page(nav, 2)
         compatible_toc = EPUBCompatibleNav([nav], package.metadata, package.manifest)
-        package.manifest.add_item('toc.ncx', 'application/x-dtbncx+xml', str(compatible_toc).encode('UTF-8'),
-                                  is_toc=True)
-        package.manifest.add_item('toc.xhtml', 'application/xhtml+xml', nav.to_xml().encode('UTF-8'),
-                                  spine_pos = package.manifest.find_spine_pos('cover.xhtml') + 1, properties='nav')
+        package.manifest.add_item('toc.ncx', str(compatible_toc), is_toc=True)
+        package.manifest.add_item('toc.xhtml', nav.to_xml(), properties='nav',
+                                  spine_pos = package.manifest.find_spine_pos('cover.xhtml') + 1)
 
-    def __process_cover(self, metadata_tuple, css_file, package):
-        (title, author, description, keywords, start_date, last_modified,
-         novel_type, complete_flag) = metadata_tuple
-        writer = SimpleXMLWriter()
-        writer.doc_type = '<!DOCTYPE html>'
-        writer.start('html', atts={'xmlns':'http://www.w3.org/1999/xhtml', 'xml:lang':'ja'})
-        writer.start('head')
-        writer.element('title', text=title)
-        if css_file is not None:
-            writer.element('link', atts={'rel':'stylesheet', 'type':'text/css', 'href':css_file})
-        writer.end()
-        writer.start('body')
-        writer.element('h1', atts={'class':'cover title'}, text=title)
-        writer.element('h2', atts={'class':'cover author'}, text='作者:')
-        writer.element('p', text=author)
-        writer.element('h2', atts={'class':'cover outline'}, text='あらすじ:')
-        writer.element('p', text=description)
-        package.manifest.add_item('cover.xhtml', 'application/xhtml+xml', str(writer).encode('UTF-8'))
-
-    def __call__(self, ncode, css_map, package, toc_decorator, page_decorator):
+    def __call__(self, package, css_map, ncode):
         metadata_tuple = self.__get_metadata(ncode)
         print(metadata_tuple)
 
@@ -208,26 +184,28 @@ class SyosetuCom:
         meta.add_title(title, lang='ja')
         meta.add_language('ja')
         meta.add_identifier('http://ncode.syosetu.com/' + ncode, unique_id=True)
+        meta.add_created(start_date)
         meta.add_modified(last_modified)
-        meta.add_date_term('created', start_date)
-        meta.add_dcmes_info(DCMESDateInfo(datetime.datetime.utcnow()))
-        meta.add_dcmes_info(DCMESCreatorInfo(author, lang='ja'))
-        meta.add_dcmes_info(DCMESInfo('description', description, lang='ja'))
+        meta.add_date(datetime.datetime.utcnow())
+        meta.add_creator(author, lang='ja')
+        meta.add_description(description, lang='ja')
 
         css_map.output(package.manifest)
-        self.__process_cover(metadata_tuple, css_map.cover_css(), package)
+        add_simple_cover(package.manifest, title, author, description=description, css_file=css_map.cover_css())
         if metadata_tuple[6] == '短編':
-            self.__process_short_story(ncode, metadata_tuple, css_map, package, page_decorator)
+            self.__process_short_story(ncode, metadata_tuple, css_map, package)
         else:
-            self.__process_serial_story(ncode, metadata_tuple, css_map, package, toc_decorator, page_decorator)
-
-        package.save(ncode + '.epub')
+            self.__process_serial_story(ncode, metadata_tuple, css_map, package)
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
         print('usage: %s [ncode (example: n0000a)]' % (sys.argv[0],))
         quit()
+    converter = SyosetuCom()
+    ncode = sys.argv[1]
+
     css_map = StylesheetMap(('style.css', SimpleVerticalWritingStyle))
     package = EPUBPackage()
     package.spine.set_direction('rtl')
-    SyosetuCom()(sys.argv[1], css_map, package, None, None)
+    converter(package, css_map, ncode)
+    package.save(ncode + '.epub')

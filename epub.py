@@ -5,7 +5,7 @@ from io import RawIOBase, IOBase
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED, ZIP_STORED
 import xml.etree.ElementTree as ET
 import xml.sax.saxutils as SAX
-import datetime
+import datetime, os.path
 
 class SimpleXMLWriter:
     def __init__(self):
@@ -67,6 +67,14 @@ class SimpleXMLWriter:
         else: doc_type = doc_type.strip() + '\n'
         return '<?xml version="1.0" encoding="utf-8" ?>\n' + doc_type + \
             self.__to_string(self.root, '')
+
+    def write_xhtml_dtd_and_documentelement(self, lang=None):
+        self.doc_type = '<!DOCTYPE html>'
+        self.start('html', atts={'xmlns':'http://www.w3.org/1999/xhtml'})
+        if lang is not None: self.att('xml:lang', lang)
+    def write_link_stylesheet(self, href):
+        if href is not None:
+            self.element('link', atts={'rel':'stylesheet', 'type':'text/css', 'href':href})
 
 class EPUBPackage:
     def __init__(self):
@@ -252,11 +260,19 @@ class EPUBMetadata:
         return self.add_dcmes_info(DCMESTitleInfo(title, lang, dir))
     def add_language(self, lang):
         return self.add_dcmes_info(DCMESLanguageInfo(lang))
+    def add_created(self, dt):
+        self.add_date_term('created', dt)
     def add_modified(self, dt):
         self.add_date_term('modified', dt)
     def add_date_term(self, term, dt):
         self.add_meta('dcterms:' + term, DCMESInfo.datetime_to_str(dt))
 
+    def add_creator(self, creator, lang = None):
+        self.add_dcmes_info(DCMESCreatorInfo(creator, lang=lang))
+    def add_date(self, dt):
+        self.add_dcmes_info(DCMESDateInfo(dt))
+    def add_description(self, description, lang = None):
+        self.add_dcmes_info(DCMESInfo('description', description, lang=lang))
     def add_dcmes_info(self, dcmes_info):
         self.dcmes.append(dcmes_info)
         if self.unique_id is None and isinstance(dcmes_info, DCMESIdentifierInfo) and dcmes_info.unique_id:
@@ -305,6 +321,10 @@ class EPUBMetadata:
         writer.end()
 
 class EPUBManifest:
+    MimeMap = {'xhtml':'application/xhtml+xml',
+               'ncx':'application/x-dtbncx+xml',
+               'css':'text/css'}
+
     def __init__(self, package, spine):
         self.package = package
         self.spine = spine
@@ -319,14 +339,25 @@ class EPUBManifest:
             if id not in self.id_set:
                 return id
 
-    def add_item(self, href, media_type, file_or_bytes,
-                 id = None, spine_pos = None,
+    def add_item(self, href, file_or_bytes,
+                 media_type = None, id = None, spine_pos = None,
                  add_to_spine=None, is_toc = False,
                  fallback=None, properties=None, media_overlay=None):
+
+        if media_type is None:
+            file_extension = os.path.splitext(href)[1][1:]
+            if file_extension not in EPUBManifest.MimeMap:
+                print(file_extension)
+                raise 'unknown media-type'
+            media_type = EPUBManifest.MimeMap[file_extension]
+
         if add_to_spine is None:
             add_to_spine = False
             if media_type in ('application/xhtml+xml'):
                 add_to_spine = True
+
+        if isinstance(file_or_bytes, str):
+            file_or_bytes = file_or_bytes.encode('UTF-8')
 
         if id is None: id = self.__create_id()
         if id in self.id_set: raise MetadataError("duplicate id")

@@ -39,39 +39,7 @@ class MaiNet:
                     cur = MaiNet.PostData()
         return posts
 
-    def __process_cover(self, title, author, css_file):
-        writer = SimpleXMLWriter()
-        writer.doc_type = '<!DOCTYPE html>'
-        writer.start('html', atts={'xmlns':'http://www.w3.org/1999/xhtml', 'xml:lang':'ja'})
-        writer.start('head')
-        writer.element('title', text=title)
-        if css_file is not None:
-            writer.element('link', atts={'rel':'stylesheet', 'type':'text/css', 'href':css_file})
-        writer.end()
-        writer.start('body')
-        writer.element('h1', atts={'class':'cover title'}, text=title)
-        writer.element('h2', atts={'class':'cover author'}, text='作者:')
-        writer.element('p', text=author)
-        return str(writer)
-
-    def __create_page(self, title, body, title_tagname, css_file):
-        writer = SimpleXMLWriter()
-        writer.doc_type = '<!DOCTYPE html>'
-        writer.start('html', atts={'xmlns':'http://www.w3.org/1999/xhtml', 'xml:lang':'ja'})
-        writer.start('head')
-        writer.element('title', text=title)
-        if css_file is not None:
-            writer.element('link', atts={'rel':'stylesheet', 'type':'text/css', 'href':css_file})
-        writer.end()
-        writer.start('body')
-        if title_tagname is not None:
-            writer.element(title_tagname, text=title)
-        for line in body.split('\n'):
-            writer.element('p', text=line.strip())
-        writer.end()
-        return str(writer)
-
-    def __call__(self, content_id, css_map, package):
+    def __call__(self, package, css_file, content_id):
         tree = lxml.html.parse('http://www.mai-net.net/bbs/sst/sst.php?act=all_msg&cate=&all=' + content_id)
         posts = self.__parse(tree)
         if len(posts) == 0: raise Exception()
@@ -81,36 +49,37 @@ class MaiNet:
         meta.add_language('ja')
         meta.add_identifier(str(uuid.uuid4()), unique_id=True)
         meta.add_modified(functools.reduce(lambda x,y: x if x.date > y.date else y, posts).date)
-        meta.add_dcmes_info(DCMESDateInfo(datetime.datetime.utcnow()))
-        meta.add_dcmes_info(DCMESCreatorInfo(posts[0].author, lang='ja'))
+        meta.add_date(datetime.datetime.utcnow())
+        meta.add_creator(posts[0].author, lang='ja')
 
-        package.manifest.add_item('cover.xhtml', 'application/xhtml+xml',
-                                  self.__process_cover(posts[0].title, posts[0].author, css_map.cover_css()).encode('UTF-8'))
+        add_simple_cover(package.manifest, posts[0].title, posts[0].author, css_file=css_map.cover_css())
         css_map.output(package.manifest)
 
         autoid = 0
         id_width = math.ceil(math.log10(len(posts)))
         nav = EPUBNav('toc', '目次', 'ja', css_map.toc_css())
         for post in posts[1:]:
-            filename = str(autoid).zfill(id_width)
+            filename = str(autoid).zfill(id_width) + '.xhtml'
             autoid += 1
             nav.add_child(post.title, filename)
-            data = self.__create_page(post.title, post.body, 'h2', css_map.page_css()).encode('UTF-8')
-            package.manifest.add_item(filename, 'application/xhtml+xml', data)
+            data = create_simple_page(post.title, 'h2', css_map.page_css(), post.body.split('\n'))
+            package.manifest.add_item(filename, data)
 
         compatible_toc = EPUBCompatibleNav([nav], package.metadata, package.manifest)
-        package.manifest.add_item('toc.ncx', 'application/x-dtbncx+xml',
-                                  str(compatible_toc).encode('UTF-8'), is_toc=True)
-        package.manifest.add_item('toc.xhtml', 'application/xhtml+xml', nav.to_xml().encode('UTF-8'),
-                                  spine_pos=package.manifest.find_spine_pos('cover.xhtml') + 1, properties='nav')
+        package.manifest.add_item('toc.ncx', str(compatible_toc), is_toc=True)
+        package.manifest.add_item('toc.xhtml', nav.to_xml(), properties='nav',
+                                  spine_pos=package.manifest.find_spine_pos('cover.xhtml') + 1)
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
         print('usage: %s [code]' % (sys.argv[0],))
         quit()
 
+    converter = MaiNet()
+    content_id = sys.argv[1]
+
     css_map = StylesheetMap(('style.css', SimpleVerticalWritingStyle))
     package = EPUBPackage()
     package.spine.set_direction('rtl')
-    MaiNet()(sys.argv[1], css_map, package)
-    package.save(sys.argv[1] + '.epub')
+    converter(package, css_map, content_id)
+    package.save(content_id + '.epub')

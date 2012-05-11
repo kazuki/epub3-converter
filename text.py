@@ -6,38 +6,6 @@ from style import *
 import sys, os.path, operator, math, uuid
 
 class TextToEpub:
-    def __process_cover(self, title, author, css_file):
-        writer = SimpleXMLWriter()
-        writer.doc_type = '<!DOCTYPE html>'
-        writer.start('html', atts={'xmlns':'http://www.w3.org/1999/xhtml', 'xml:lang':'ja'})
-        writer.start('head')
-        writer.element('title', text=title)
-        if css_file is not None:
-            writer.element('link', atts={'rel':'stylesheet', 'type':'text/css', 'href':css_file})
-        writer.end()
-        writer.start('body')
-        writer.element('h1', atts={'class':'cover title'}, text=title)
-        writer.element('h2', atts={'class':'cover author'}, text='作者:')
-        writer.element('p', text=author)
-        return str(writer)
-
-    def __create_page(self, path, title, title_tagname, css_file):
-        writer = SimpleXMLWriter()
-        writer.doc_type = '<!DOCTYPE html>'
-        writer.start('html', atts={'xmlns':'http://www.w3.org/1999/xhtml', 'xml:lang':'ja'})
-        writer.start('head')
-        writer.element('title', text=title)
-        if css_file is not None:
-            writer.element('link', atts={'rel':'stylesheet', 'type':'text/css', 'href':css_file})
-        writer.end()
-        writer.start('body')
-        if title_tagname is not None:
-            writer.element(title_tagname, text=title)
-        for line in open(path, 'r'):
-            writer.element('p', text=line.strip())
-        writer.end()
-        return str(writer)
-
     def __call__(self, title, author, filelist, css_map, package):
         def find_date_info():
             created = datetime.datetime.max
@@ -60,8 +28,7 @@ class TextToEpub:
         meta.add_dcmes_info(DCMESDateInfo(datetime.datetime.utcnow()))
         meta.add_dcmes_info(DCMESCreatorInfo(author, lang='ja'))
 
-        package.manifest.add_item('cover.xhtml', 'application/xhtml+xml',
-                                  self.__process_cover(title, author, css_map.cover_css()).encode('UTF-8'))
+        add_simple_cover(package.manifest, title, author, css_file=css_map.cover_css())
         css_map.output(package.manifest)
 
         nav = EPUBNav('toc', '目次', 'ja', css_map.toc_css())
@@ -82,17 +49,16 @@ class TextToEpub:
         autoid = 0
         id_width = math.ceil(math.log10(len(toc_list)))
         for entry in toc_list:
-            entry.filename = str(autoid).zfill(id_width)
+            entry.filename = str(autoid).zfill(id_width) + '.xhtml'
             autoid += 1
             nav.add_child(entry.title, entry.filename)
-            data = self.__create_page(entry.path, entry.title, 'h2', css_map.page_css()).encode('UTF-8')
-            package.manifest.add_item(entry.filename, 'application/xhtml+xml', data)
+            data = create_simple_page(entry.title, 'h2', css_map.page_css(), open(entry.path, 'r')).encode('UTF-8')
+            package.manifest.add_item(entry.filename, data)
 
         compatible_toc = EPUBCompatibleNav([nav], package.metadata, package.manifest)
-        package.manifest.add_item('toc.ncx', 'application/x-dtbncx+xml',
-                                  str(compatible_toc).encode('UTF-8'), is_toc=True)
-        package.manifest.add_item('toc.xhtml', 'application/xhtml+xml', nav.to_xml().encode('UTF-8'),
-                                  spine_pos=package.manifest.find_spine_pos('cover.xhtml') + 1, properties='nav')
+        package.manifest.add_item('toc.ncx', str(compatible_toc).encode('UTF-8'), is_toc=True)
+        package.manifest.add_item('toc.xhtml', nav.to_xml().encode('UTF-8'), properties='nav',
+                                  spine_pos=package.manifest.find_spine_pos('cover.xhtml') + 1)
 
 if __name__ == '__main__':
     if len(sys.argv) < 4:
