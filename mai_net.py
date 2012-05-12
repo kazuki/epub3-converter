@@ -39,7 +39,7 @@ class MaiNet:
                     cur = MaiNet.PostData()
         return posts
 
-    def __call__(self, package, css_file, content_id):
+    def __call__(self, package, css_map, content_id):
         tree = lxml.html.parse('http://www.mai-net.net/bbs/sst/sst.php?act=all_msg&cate=&all=' + content_id)
         posts = self.__parse(tree)
         if len(posts) == 0: raise Exception()
