@@ -72,8 +72,9 @@ class SyosetuCom:
             else: mime = None
             return (filename, mime, f.read())
 
-    def __process_page(self, url, use_cache_newer_than, title, title_tagname, filename, css_file, package):
-        page_tree = lxml.html.parse(io.BytesIO(self.cache.fetch(url, use_cache_newer_than=use_cache_newer_than)))
+    def __process_page(self, url, use_cache_newer_than, title, title_tagname, filename, css_file, package, data=None):
+        if data is None: data = self.cache.fetch(url, use_cache_newer_than=use_cache_newer_than)
+        page_tree = lxml.html.parse(io.BytesIO(data))
         def find_novel_view():
             for div in page_tree.iter('div'):
                 if 'id' not in div.attrib: continue
@@ -153,9 +154,12 @@ class SyosetuCom:
         def find_novel_sublist():
             for div in toc_page.iter('div'):
                 if 'class' in div.attrib and div.attrib['class'] == 'novel_sublist': return div
+        def rellink_to_url(rellink):
+            return 'http://ncode.syosetu.com/' + ncode + '/' + rellink + '/'
         nav = EPUBNav('toc', '目次', 'ja', css_map.toc_css())
         child = None
         num_of_files = 0
+        flat_link_list = []
         modified_datetime_map = {}
         for td in find_novel_sublist().iter('td'):
             if 'class' not in td.attrib: continue
@@ -165,6 +169,8 @@ class SyosetuCom:
                 link = td.find('a')
                 if td.attrib['class'] == 'period_subtitle': node = child
                 link_value = link.attrib['href'][len(ncode)+2:].rstrip('/')
+                url = rellink_to_url(link_value)
+                flat_link_list.append(url)
                 node.add_child(link.text.strip(), link=link_value)
                 num_of_files += 1
                 for sib in td.itersiblings(tag='td'):
@@ -172,22 +178,27 @@ class SyosetuCom:
                         modified_text = sib.text
                         for c in '\n\r \t年月日/': modified_text = modified_text.replace(c,'')
                         try:
-                            modified_datetime_map[link_value] = \
+                            modified_datetime_map[url] = \
                                 datetime.datetime(int(modified_text[0:4]),
                                                   int(modified_text[4:6]),
                                                   int(modified_text[6:8])) - datetime.timedelta(hours=9)
                         except:
-                            modified_datetime_map[link_value] = None
+                            modified_datetime_map[url] = None
+
+        # parallel fetch
+        fetch_result = self.cache.fetch_all(flat_link_list, use_cache_newer_than_map=modified_datetime_map)
+        fetch_result_map = {}
+        for i in range(len(flat_link_list)):
+            fetch_result_map[flat_link_list[i]] = fetch_result[i]
 
         filename_width = math.ceil(math.log10(num_of_files))
         def process_page(nav_node, indent):
             if nav_node.link is not None:
-                last_modified = modified_datetime_map[nav_node.link]
                 filename = nav_node.link.zfill(filename_width) + '.xhtml'
-                url = 'http://ncode.syosetu.com/' + ncode + '/' + nav_node.link + '/'
+                url = rellink_to_url(nav_node.link)
                 nav_node.link = filename
-                self.__process_page(url, last_modified, nav_node.title, 'h' + str(indent),
-                                    filename, css_map.page_css(), package)
+                self.__process_page(url, modified_datetime_map[url], nav_node.title, 'h' + str(indent),
+                                    filename, css_map.page_css(), package, data=fetch_result_map[url])
             next_indent = indent + 1
             if next_indent > 6: next_indent = 6
             for child in nav_node.children:

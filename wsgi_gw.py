@@ -12,8 +12,8 @@ class SimpleGW:
     SYOSETU_COM = 'syosetu.com'
     MAI_NET = 'mai-net.net'
 
-    def __init__(self):
-        self.cache = SimpleCache()
+    def __init__(self, cache):
+        self.cache = cache
         self.service_map = {
             SimpleGW.SYOSETU_COM: syosetu_com.SyosetuCom(cache=self.cache),
             SimpleGW.MAI_NET: mai_net.MaiNet(cache=self.cache)
@@ -98,7 +98,8 @@ class SimpleGW:
             err_msg += '再度試行してもエラーとなる場合は，作者まで変換できないURLを報告してください．'
             return [err_msg.encode('UTF-8')]
 
-application = SimpleGW()
+cache_db_path=os.path.dirname(os.path.abspath(__file__)) + '/data/cache.sqlite'
+application = SimpleGW(SimpleCache(cache_db_path=cache_db_path))
 
 if __name__ == '__main__':
     from wsgiref.simple_server import make_server
