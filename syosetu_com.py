@@ -53,7 +53,10 @@ class SyosetuCom:
             return datetime.datetime(int(s2[0:4]), int(s2[4:6]), int(s2[6:8]), int(s2[8:10]), int(s2[10:12]),
                                      tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
         start_date = to_datetime(start_date)
-        last_modified = to_datetime(last_modified)
+        try:
+            last_modified = to_datetime(last_modified)
+        except:
+            last_modified = start_date
         return (title, author, description, keywords, start_date, last_modified, novel_type, complete_flag)
 
     def __process_image(self, url):
