@@ -108,9 +108,7 @@ class EPUBPackage:
         self.metadata.write_xml(writer)
         self.manifest.write_xml(writer)
         self.spine.write_xml(writer)
-        output = str(writer)
-        print(output)
-        return output.encode("UTF-8")
+        return str(writer).encode("UTF-8")
 
     def save(self, file, compression = ZIP_DEFLATED):
         self.__validate()
@@ -347,7 +345,6 @@ class EPUBManifest:
         if media_type is None:
             file_extension = os.path.splitext(href)[1][1:]
             if file_extension not in EPUBManifest.MimeMap:
-                print(file_extension)
                 raise 'unknown media-type'
             media_type = EPUBManifest.MimeMap[file_extension]
 

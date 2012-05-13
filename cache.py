@@ -38,12 +38,15 @@ class SimpleCache:
     def connect_immediate(self, db):
         return db.connect(_execution_options={'isolation_level':'IMMEDIATE'})
 
-    def fetch(self, url, force_use_cache=False):
+    def fetch(self, url, use_cache_newer_than=None):
+        if use_cache_newer_than is None or not isinstance(use_cache_newer_than, datetime.datetime):
+            use_cache_newer_than = datetime.datetime.max
+
         c = self.connect_deferred(self.cache_db)
         with c.begin() as transaction:
             cache_entry = c.execute(self.query_lookup_cache_url_record, url=url).fetchone()
             if cache_entry is not None:
-                if force_use_cache or (cache_entry[0] + self.expiration_time >= datetime.datetime.utcnow()):
+                if cache_entry[0] >= use_cache_newer_than or cache_entry[0] + self.expiration_time >= datetime.datetime.utcnow():
                     return zlib.decompress(c.execute(self.query_lookup_data, hash=cache_entry[1]).fetchone()[0])
 
         # download
@@ -52,11 +55,12 @@ class SimpleCache:
         with urllib.request.urlopen(url) as res:
             binary = res.readall()
             compressed_binary = zlib.compress(binary)
-            try:
-                dt_modified = datetime.datetime.strptime(res.info().get('Last-Modified', None),
-                                                         '%a, %d %b %Y %H:%M:%S GMT')
-            except:
-                pass
+            dt_modified = res.info().get('Last-Modified', None)
+            if dt_modified is not None:
+                try:
+                    dt_modified = datetime.datetime.strptime(dt_modified, '%a, %d %b %Y %H:%M:%S GMT')
+                except:
+                    pass
         hash_value = hashlib.sha512(binary).hexdigest()[0:64]
 
         # add/update cache entry
@@ -83,8 +87,8 @@ class SimpleCache:
                 transaction.rollback()
         return binary
 
-    def fetch_all(self, url_list, force_use_cache=False):
-        futures = [self.executor.submit(self.fetch, url, force_use_cache=force_use_cache) for url in url_list]
+    def fetch_all(self, url_list, use_cache_newer_than=None):
+        futures = [self.executor.submit(self.fetch, url, use_cache_newer_than=use_cache_newer_than) for url in url_list]
         results = []
         for future in futures:
             try:
@@ -97,12 +101,12 @@ class DummyCache:
     def __init__(self, max_parallel_fetches=8):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel_fetches)
 
-    def fetch(self, url, force_use_cache=False):
+    def fetch(self, url, use_cache_newer_than=None):
         with urllib.request.urlopen(url) as res:
             return res.readall()
 
-    def fetch_all(self, url_list, force_use_cache=False):
-        futures = [self.executor.submit(self.fetch, url, force_use_cache=force_use_cache) for url in url_list]
+    def fetch_all(self, url_list, use_cache_newer_than=None):
+        futures = [self.executor.submit(self.fetch, url) for url in url_list]
         results = []
         for future in futures:
             try:

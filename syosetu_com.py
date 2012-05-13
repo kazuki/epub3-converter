@@ -57,7 +57,8 @@ class SyosetuCom:
             last_modified = to_datetime(last_modified)
         except:
             last_modified = start_date
-        return (title, author, description, keywords, start_date, last_modified, novel_type, complete_flag)
+        return (title, author, description, keywords, start_date, last_modified, novel_type, complete_flag,
+                (last_modified - last_modified.utcoffset()).replace(tzinfo=None))
 
     def __process_image(self, url):
         '''return (filename, mime, bytes)'''
@@ -71,8 +72,8 @@ class SyosetuCom:
             else: mime = None
             return (filename, mime, f.read())
 
-    def __process_page(self, url, title, title_tagname, filename, css_file, package):
-        page_tree = lxml.html.parse(io.BytesIO(self.cache.fetch(url)))
+    def __process_page(self, url, use_cache_newer_than, title, title_tagname, filename, css_file, package):
+        page_tree = lxml.html.parse(io.BytesIO(self.cache.fetch(url, use_cache_newer_than=use_cache_newer_than)))
         def find_novel_view():
             for div in page_tree.iter('div'):
                 if 'id' not in div.attrib: continue
@@ -137,25 +138,25 @@ class SyosetuCom:
         writer.end()
         package.manifest.add_item(filename, str(writer))
 
-    def __process_short_story(self, ncode, metadata_tuple, css_map, package):
-        (title, author, description, keywords, start_date, last_modified,
-         novel_type, complete_flag) = metadata_tuple
-
+    def __process_short_story(self, ncode, title, use_cache_newer_than, css_map, package):
         nav = EPUBNav('toc', '目次', 'ja', css_map.toc_css())
         nav.add_child(title, link = 'novel.xhtml')
         compatible_toc = EPUBCompatibleNav([nav], package.metadata, package.manifest)
-        self.__process_page('http://ncode.syosetu.com/' + ncode, title, None, 'novel.xhtml', css_map.page_css(), package)
+        self.__process_page('http://ncode.syosetu.com/' + ncode, use_cache_newer_than,
+                            title, None, 'novel.xhtml', css_map.page_css(), package)
         package.manifest.add_item('toc.ncx', str(compatible_toc), is_toc=True)
         package.manifest.add_item('toc.xhtml', nav.to_xml(), add_to_spine=False, properties='nav')
 
-    def __process_serial_story(self, ncode, metadata_tuple, css_map, package):
-        toc_page = lxml.html.parse(io.BytesIO(self.cache.fetch('http://ncode.syosetu.com/' + ncode)))
+    def __process_serial_story(self, ncode, use_cache_newer_than, css_map, package):
+        toc_page = lxml.html.parse(io.BytesIO(self.cache.fetch('http://ncode.syosetu.com/' + ncode,
+                                                               use_cache_newer_than=use_cache_newer_than)))
         def find_novel_sublist():
             for div in toc_page.iter('div'):
                 if 'class' in div.attrib and div.attrib['class'] == 'novel_sublist': return div
         nav = EPUBNav('toc', '目次', 'ja', css_map.toc_css())
         child = None
         num_of_files = 0
+        modified_datetime_map = {}
         for td in find_novel_sublist().iter('td'):
             if 'class' not in td.attrib: continue
             if td.attrib['class'] == 'chapter': child = nav.add_child(td.text.strip())
@@ -163,16 +164,30 @@ class SyosetuCom:
                 node = nav
                 link = td.find('a')
                 if td.attrib['class'] == 'period_subtitle': node = child
-                node.add_child(link.text.strip(), link=link.attrib['href'][len(ncode)+2:].rstrip('/'))
+                link_value = link.attrib['href'][len(ncode)+2:].rstrip('/')
+                node.add_child(link.text.strip(), link=link_value)
                 num_of_files += 1
+                for sib in td.itersiblings(tag='td'):
+                    if sib.attrib.get('class') == 'long_update':
+                        modified_text = sib.text
+                        for c in '\n\r \t年月日/': modified_text = modified_text.replace(c,'')
+                        try:
+                            modified_datetime_map[link_value] = \
+                                datetime.datetime(int(modified_text[0:4]),
+                                                  int(modified_text[4:6]),
+                                                  int(modified_text[6:8])) - datetime.timedelta(hours=9)
+                        except:
+                            modified_datetime_map[link_value] = None
 
         filename_width = math.ceil(math.log10(num_of_files))
         def process_page(nav_node, indent):
             if nav_node.link is not None:
+                last_modified = modified_datetime_map[nav_node.link]
                 filename = nav_node.link.zfill(filename_width) + '.xhtml'
                 url = 'http://ncode.syosetu.com/' + ncode + '/' + nav_node.link + '/'
                 nav_node.link = filename
-                self.__process_page(url, nav_node.title, 'h' + str(indent), filename, css_map.page_css(), package)
+                self.__process_page(url, last_modified, nav_node.title, 'h' + str(indent),
+                                    filename, css_map.page_css(), package)
             next_indent = indent + 1
             if next_indent > 6: next_indent = 6
             for child in nav_node.children:
@@ -185,10 +200,8 @@ class SyosetuCom:
 
     def __call__(self, package, css_map, ncode):
         metadata_tuple = self.__get_metadata(ncode)
-        print(metadata_tuple)
-
         (title, author, description, keywords, start_date, last_modified,
-         novel_type, complete_flag) = metadata_tuple
+         novel_type, complete_flag, use_cache_newer_than) = metadata_tuple
         meta = package.metadata
         meta.add_title(title, lang='ja')
         meta.add_language('ja')
@@ -202,9 +215,9 @@ class SyosetuCom:
         css_map.output(package.manifest)
         add_simple_cover(package.manifest, title, author, description=description, css_file=css_map.cover_css())
         if metadata_tuple[6] == '短編':
-            self.__process_short_story(ncode, metadata_tuple, css_map, package)
+            self.__process_short_story(ncode, title, use_cache_newer_than, css_map, package)
         else:
-            self.__process_serial_story(ncode, metadata_tuple, css_map, package)
+            self.__process_serial_story(ncode, use_cache_newer_than, css_map, package)
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
