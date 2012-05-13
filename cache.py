@@ -1,54 +1,27 @@
 import datetime, hashlib, zlib, urllib.request
-import concurrent.futures
-import sqlalchemy
+import concurrent.futures, os.path, shelve
 
 class SimpleCache:
-    def __init__(self, cache_db_path = 'data/cache.sqlite',
+    def __init__(self, cache_dir = 'data',
                  expiration_time = datetime.timedelta(hours=6), max_parallel_fetches=8):
         self.expiration_time = expiration_time
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel_fetches)
 
-        from sqlalchemy.schema import Table, Column
-        from sqlalchemy.types import Integer, DateTime, LargeBinary, String
-        self.cache_db= sqlalchemy.create_engine('sqlite:///' + cache_db_path)
-        self.meta = sqlalchemy.MetaData()
-
-        # expiration model cache
-        self.url_table = Table('html_cache_url', self.meta,
-                               Column('url', String, primary_key=True),
-                               Column('accessed', DateTime, nullable=False),
-                               Column('hash', String(64), nullable=False))
-        self.data_table = Table('html_cache_data', self.meta,
-                                Column('hash', String(64), primary_key=True),
-                                Column('url', String, nullable=False),
-                                Column('modified', DateTime, nullable=True),
-                                Column('accessed', DateTime, nullable=False),
-                                Column('data', LargeBinary, nullable=False))
-        self.meta.create_all(self.cache_db)
-
-        # build query
-        from sqlalchemy.sql import select, bindparam
-        self.query_lookup_cache_url_record = select([self.url_table.c.accessed, self.url_table.c.hash],
-                                                    self.url_table.c.url==bindparam('url'))
-        self.query_lookup_data = select([self.data_table.c.data],
-                                        self.data_table.c.hash==bindparam('hash'))
-
-    def connect_deferred(self, db):
-        return db.connect(_execution_options={'isolation_level':'DEFERRED'})
-
-    def connect_immediate(self, db):
-        return db.connect(_execution_options={'isolation_level':'IMMEDIATE'})
+        """ GNU dbm key-value spec.
+        url_db:  key=url, value=(accessed, hash)
+        data_db: key=hash, value=(url, modified, data) """
+        self.url_db = shelve.open(os.path.join(cache_dir, 'urldb'), flag='c')
+        self.data_db = shelve.open(os.path.join(cache_dir, 'datadb'), flag='c')
 
     def __lookup_cache(self, url, use_cache_newer_than=None):
         if use_cache_newer_than is None or not isinstance(use_cache_newer_than, datetime.datetime):
             use_cache_newer_than = datetime.datetime.max
-        c = self.connect_deferred(self.cache_db)
-        with c.begin() as transaction:
-            cache_entry = c.execute(self.query_lookup_cache_url_record, url=url).fetchone()
-            if cache_entry is not None:
-                if cache_entry[0] >= use_cache_newer_than or cache_entry[0] + self.expiration_time >= datetime.datetime.utcnow():
-                    return (cache_entry, zlib.decompress(c.execute(self.query_lookup_data, hash=cache_entry[1]).fetchone()[0]))
-            return (cache_entry, None)
+        entry = self.url_db.get(url)
+        if entry is not None:
+            if entry[0] >= use_cache_newer_than or entry[0] + self.expiration_time >= datetime.datetime.utcnow():
+                data_entry = self.data_db.get(entry[1])
+                return (entry, zlib.decompress(data_entry[2]))
+        return (entry, None)
 
     def __download(self, url):
         dt_modified = None
@@ -66,27 +39,9 @@ class SimpleCache:
         return (binary, compressed_binary, hash_value, dt_accessed, dt_modified)
 
     def __update_cache(self, url, cache_entry, compressed_binary, hash_value, dt_accessed, dt_modified):
-        c = self.connect_immediate(self.cache_db)
-        with c.begin() as transaction:
-            try:
-                if cache_entry is None:
-                    c.execute(self.url_table.insert(), url=url, accessed=dt_accessed, hash=hash_value)
-                else:
-                    c.execute(self.url_table.update().values({
-                                self.url_table.c.accessed: dt_accessed,
-                                self.url_table.c.hash:hash_value
-                              }).where(self.url_table.c.url==url))
-                if cache_entry is None or hash_value != cache_entry[1]:
-                    c.execute(self.data_table.insert(), hash=hash_value, url=url, data=compressed_binary,
-                              accessed=dt_accessed, modified=dt_modified)
-                else:
-                    c.execute(self.data_table.update().values({
-                                self.data_table.c.accessed: dt_accessed
-                              }).where(self.data_table.c.hash == hash_value))
-                transaction.commit()
-            except:
-                # rollback. ignore exception
-                transaction.rollback()
+        if cache_entry is None or hash_value != cache_entry[1]:
+            self.data_db[hash_value] = (url, dt_modified, compressed_binary)
+        self.url_db[url] = (dt_accessed, hash_value)
 
     def fetch(self, url, use_cache_newer_than=None):
         (cache_entry, binary) = self.__lookup_cache(url, use_cache_newer_than)

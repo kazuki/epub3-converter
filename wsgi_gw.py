@@ -98,8 +98,8 @@ class SimpleGW:
             err_msg += '再度試行してもエラーとなる場合は，作者まで変換できないURLを報告してください．'
             return [err_msg.encode('UTF-8')]
 
-cache_db_path=os.path.dirname(os.path.abspath(__file__)) + '/data/cache.sqlite'
-application = SimpleGW(SimpleCache(cache_db_path=cache_db_path))
+data_dir=os.path.dirname(os.path.abspath(__file__)) + '/data'
+application = SimpleGW(SimpleCache(cache_dir=data_dir))
 
 if __name__ == '__main__':
     from wsgiref.simple_server import make_server
