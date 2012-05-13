@@ -3,10 +3,15 @@
 
 from epub import *
 from style import *
-import lxml.html, math, sys, urllib.request, re, datetime
+from cache import DummyCache
+import lxml.html, math, sys, urllib.request, re, datetime, io
 
 class SyosetuCom:
     image_url_regex = re.compile('[^0-9]*([0-9]+)\..*/icode/(i[0-9a-zA-Z]+)')
+
+    def __init__(self, cache=DummyCache()):
+        self.cache = cache
+
     def __get_all_text(self, node):
         text = ''
         for n in node.iter():
@@ -16,7 +21,8 @@ class SyosetuCom:
     def __get_metadata(self, ncode):
         ''' return (title, author, description, keywords[space-separated],
             start-date, last modified, type[連載,短編], completed_flag)    '''
-        info_page = lxml.html.parse('http://ncode.syosetu.com/novelview/infotop/ncode/' + ncode)
+        fetch_url = 'http://ncode.syosetu.com/novelview/infotop/ncode/' + ncode
+        info_page = lxml.html.parse(io.BytesIO(self.cache.fetch(fetch_url)))
         prev_caption = None
         title, author, description, keywords, start_date, last_modified = None, None, None, None, None, None
         novel_type, complete_flag = None, True
@@ -63,7 +69,7 @@ class SyosetuCom:
             return (filename, mime, f.read())
 
     def __process_page(self, url, title, title_tagname, filename, css_file, package):
-        page_tree = lxml.html.parse(url)
+        page_tree = lxml.html.parse(io.BytesIO(self.cache.fetch(url)))
         def find_novel_view():
             for div in page_tree.iter('div'):
                 if 'id' not in div.attrib: continue
@@ -140,7 +146,7 @@ class SyosetuCom:
         package.manifest.add_item('toc.xhtml', nav.to_xml(), add_to_spine=False, properties='nav')
 
     def __process_serial_story(self, ncode, metadata_tuple, css_map, package):
-        toc_page = lxml.html.parse('http://ncode.syosetu.com/' + ncode)
+        toc_page = lxml.html.parse(io.BytesIO(self.cache.fetch('http://ncode.syosetu.com/' + ncode)))
         def find_novel_sublist():
             for div in toc_page.iter('div'):
                 if 'class' in div.attrib and div.attrib['class'] == 'novel_sublist': return div

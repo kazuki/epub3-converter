@@ -1,24 +1,30 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
-import io, sys, os.path, urllib.parse, base64
+import io, sys, os.path, urllib.parse
 from urllib.parse import parse_qs, urlparse
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import syosetu_com, mai_net, epub, style
+from cache import SimpleCache
 
 class SimpleGW:
     SYOSETU_COM = 'syosetu.com'
     MAI_NET = 'mai-net.net'
-    ServiceMap = {SYOSETU_COM: syosetu_com.SyosetuCom(),
-                  MAI_NET: mai_net.MaiNet()}
+
+    def __init__(self):
+        self.cache = SimpleCache()
+        self.service_map = {
+            SimpleGW.SYOSETU_COM: syosetu_com.SyosetuCom(cache=self.cache),
+            SimpleGW.MAI_NET: mai_net.MaiNet(cache=self.cache)
+        }
 
     def __call__(self, environ, start_response):
         qs = parse_qs(environ['QUERY_STRING'])
         if 'url' in qs:
-            return SimpleGW.ConvertFromURL(qs['url'][0], environ, start_response)
+            return self.ConvertFromURL(qs['url'][0], environ, start_response)
         if 's' in qs and 'n' in qs:
-            return SimpleGW.Convert(qs['s'][0], qs['n'][0], environ, start_response)
+            return self.Convert(qs['s'][0], qs['n'][0], environ, start_response)
 
         mime_type = 'application/xhtml+xml'
         if mime_type not in environ.get('HTTP_ACCEPT', ''):
@@ -48,7 +54,7 @@ class SimpleGW:
 </body></html>"""
         return [contents.encode('UTF-8')]
 
-    def ConvertFromURL(url, environ, start_response):
+    def ConvertFromURL(self, url, environ, start_response):
         url = urlparse(url)
         service_name = None
         code = None
@@ -61,11 +67,11 @@ class SimpleGW:
         elif url.hostname == 'www.mai-net.net':
             service_name = SimpleGW.MAI_NET
             code = parse_qs(url.query).get('all')[0]
-        return SimpleGW.Convert(service_name, code, environ, start_response)
+        return self.Convert(service_name, code, environ, start_response)
         
-    def Convert(service_name, code, environ, start_response):
+    def Convert(self, service_name, code, environ, start_response):
         try:
-            converter = SimpleGW.ServiceMap.get(service_name)
+            converter = self.service_map.get(service_name)
             if converter is None or code is None:
                 raise 'argument error'
 

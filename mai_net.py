@@ -3,9 +3,13 @@
 
 from epub import *
 from style import *
-import lxml.html, math, sys, datetime, uuid, functools
+from cache import DummyCache
+import lxml.html, math, sys, datetime, uuid, functools, io
 
 class MaiNet:
+    def __init__(self, cache=DummyCache()):
+        self.cache = cache
+
     class PostData:
         def __init__(self):
             self.title  = None
@@ -40,7 +44,8 @@ class MaiNet:
         return posts
 
     def __call__(self, package, css_map, content_id):
-        tree = lxml.html.parse('http://www.mai-net.net/bbs/sst/sst.php?act=all_msg&cate=&all=' + content_id)
+        fetch_url = 'http://www.mai-net.net/bbs/sst/sst.php?act=all_msg&cate=&all=' + content_id
+        tree = lxml.html.parse(io.BytesIO(self.cache.fetch(fetch_url)))
         posts = self.__parse(tree)
         if len(posts) == 0: raise Exception()
 
