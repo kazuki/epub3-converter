@@ -4,7 +4,7 @@
 from epub import *
 from style import *
 from cache import DummyCache
-import lxml.html, math, sys, urllib.request, re, datetime, io
+import lxml.html, math, sys, urllib.request, re, datetime, io, json
 
 class SyosetuCom:
     image_url_regex = re.compile('[^0-9]*([0-9]+)\..*/icode/(i[0-9a-zA-Z]+)')
@@ -21,45 +21,60 @@ class SyosetuCom:
     def __get_metadata(self, ncode):
         ''' return (title, author, description, keywords[space-separated],
             start-date, last modified, type[連載,短編], completed_flag)    '''
-        fetch_url = 'http://ncode.syosetu.com/novelview/infotop/ncode/' + ncode
-        info_page = lxml.html.parse(io.BytesIO(self.cache.fetch(fetch_url)))
-        prev_caption = None
-        title, author, description, keywords, start_date, last_modified = None, None, None, None, None, None
-        novel_type, complete_flag = None, True
-
-        def __safe_get_text(node):
-            return node.text.strip() if node is not None and node.text is not None else ''
-
-        for td in info_page.iter('td'):
-            if 'class' in td.attrib and td.attrib['class'] in ('h1', 'h_l'):
-                prev_caption = __safe_get_text(td)
-                continue
-            author = __safe_get_text(td.find('div/a'))
-            title = __safe_get_text(td.find('div/strong/a'))
-            if prev_caption is None: continue
-            elif prev_caption == 'あらすじ': description = self.__get_all_text(td)
-            elif prev_caption == 'キーワード': keywords = __safe_get_text(td.find('div'))
-            elif prev_caption == '掲載日': start_date = __safe_get_text(td)
-            elif prev_caption.startswith('最終'): last_modified = __safe_get_text(td)
-            elif prev_caption == '種別':
-                novel_type = __safe_get_text(td)
-                if novel_type.startswith('連載'): complete_flag = False
-                if novel_type != '短編': novel_type = '連載'
-
         def to_datetime(s):
             s2 = ''
             for c in s:
-                if c >= '0' and c <= '9':
-                    s2 += c
+                if c >= '0' and c <= '9': s2 += c
             return datetime.datetime(int(s2[0:4]), int(s2[4:6]), int(s2[6:8]), int(s2[8:10]), int(s2[10:12]),
                                      tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
-        start_date = to_datetime(start_date)
+        def __get_metadata_manual_parse():
+            fetch_url = 'http://ncode.syosetu.com/novelview/infotop/ncode/' + ncode
+            info_page = lxml.html.parse(io.BytesIO(self.cache.fetch(fetch_url)))
+            prev_caption = None
+            title, author, description, keywords, start_date, last_modified = None, None, None, None, None, None
+            novel_type, complete_flag = None, True
+            def __safe_get_text(node):
+                return node.text.strip() if node is not None and node.text is not None else ''
+            for td in info_page.iter('td'):
+                if 'class' in td.attrib and td.attrib['class'] in ('h1', 'h_l'):
+                    prev_caption = __safe_get_text(td)
+                    continue
+                author = __safe_get_text(td.find('div/a'))
+                title = __safe_get_text(td.find('div/strong/a'))
+                if prev_caption is None: continue
+                elif prev_caption == 'あらすじ': description = self.__get_all_text(td)
+                elif prev_caption == 'キーワード': keywords = __safe_get_text(td.find('div'))
+                elif prev_caption == '掲載日': start_date = __safe_get_text(td)
+                elif prev_caption.startswith('最終'): last_modified = __safe_get_text(td)
+                elif prev_caption == '種別':
+                    novel_type = __safe_get_text(td)
+                    if novel_type.startswith('連載'): complete_flag = False
+                    if novel_type != '短編': novel_type = '連載'
+            start_date = to_datetime(start_date)
+            try:
+                last_modified = to_datetime(last_modified)
+            except:
+                last_modified = start_date
+            return (title, author, description, keywords, start_date, last_modified, novel_type, complete_flag,
+                    (last_modified - last_modified.utcoffset()).replace(tzinfo=None))
+        def __get_metadata_api(base_url):
+            json_val = json.load(io.StringIO(self.cache.fetch(base_url + '?out=json&of=t-w-s-k-gf-nt-e-nu&ncode=' + ncode).decode('utf-8')))
+            if json_val[0].get('allcount', 0) == 0: raise 'not found'
+            m = json_val[1]
+            last_modified = to_datetime(m.get('novelupdated_at'))
+            return (m['title'], m['writer'], m.get('story',''), m.get('keyword',''),
+                    to_datetime(m['general_firstup']), last_modified,
+                    '連載' if m['noveltype'] == 1 else '短編',
+                    True if m.get('end',0) == 0 else False,
+                    (last_modified - last_modified.utcoffset()).replace(tzinfo=None))
+
         try:
-            last_modified = to_datetime(last_modified)
-        except:
-            last_modified = start_date
-        return (title, author, description, keywords, start_date, last_modified, novel_type, complete_flag,
-                (last_modified - last_modified.utcoffset()).replace(tzinfo=None))
+            return __get_metadata_api('http://api.syosetu.com/novelapi/api/')
+        except: pass
+        try:
+            return __get_metadata_api('http://api.syosetu.com/novel18api/api/')
+        except: pass
+        return __get_metadata_manual_parse()
 
     def __process_image(self, url):
         '''return (filename, mime, bytes)'''
