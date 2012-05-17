@@ -27,21 +27,22 @@ class SyosetuCom:
         title, author, description, keywords, start_date, last_modified = None, None, None, None, None, None
         novel_type, complete_flag = None, True
 
+        def __safe_get_text(node):
+            return node.text.strip() if node is not None and node.text is not None else ''
+
         for td in info_page.iter('td'):
             if 'class' in td.attrib and td.attrib['class'] in ('h1', 'h_l'):
-                prev_caption = td.text
+                prev_caption = __safe_get_text(td)
                 continue
-            author_a = td.find('div/a')
-            title_a = td.find('div/strong/a')
-            if author_a is not None: author = author_a.text.strip()
-            if title_a is not None:  title = title_a.text.strip()
+            author = __safe_get_text(td.find('div/a'))
+            title = __safe_get_text(td.find('div/strong/a'))
             if prev_caption is None: continue
             elif prev_caption == 'あらすじ': description = self.__get_all_text(td)
-            elif prev_caption == 'キーワード': keywords = td.find('div').text.strip()
-            elif prev_caption == '掲載日': start_date = td.text.strip()
-            elif prev_caption.startswith('最終'): last_modified = td.text.strip()
+            elif prev_caption == 'キーワード': keywords = __safe_get_text(td.find('div'))
+            elif prev_caption == '掲載日': start_date = __safe_get_text(td)
+            elif prev_caption.startswith('最終'): last_modified = __safe_get_text(td)
             elif prev_caption == '種別':
-                novel_type = td.text.strip()
+                novel_type = __safe_get_text(td)
                 if novel_type.startswith('連載'): complete_flag = False
                 if novel_type != '短編': novel_type = '連載'
 
