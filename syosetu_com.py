@@ -64,7 +64,7 @@ class SyosetuCom:
             last_modified = to_datetime(m.get('novelupdated_at'))
             return (m['title'], m['writer'], m.get('story',''), m.get('keyword',''),
                     to_datetime(m['general_firstup']), last_modified,
-                    '連載' if m['noveltype'] == 1 else '短編',
+                    '連載' if str(m['noveltype']) == '1' else '短編',
                     True if m.get('end',0) == 0 else False,
                     (last_modified - last_modified.utcoffset()).replace(tzinfo=None))
 
