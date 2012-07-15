@@ -1,5 +1,18 @@
 import datetime, hashlib, zlib, urllib.request
-import concurrent.futures, os.path, shelve
+import concurrent.futures, os.path, shelve, sys, time
+from urllib.error import HTTPError
+
+def url_readall(url):
+    while True:
+        try:
+            with urllib.request.urlopen(url) as res:
+                return (res.readall(), res)
+        except HTTPError as ex:
+            if ex.code in (503,):
+                sys.stderr.write('urlopen failed. retry...' + url + '\n');
+                time.sleep(3)
+            else:
+                raise ex
 
 class SimpleCache:
     def __init__(self, cache_dir = 'data',
@@ -26,15 +39,14 @@ class SimpleCache:
     def __download(self, url):
         dt_modified = None
         dt_accessed = datetime.datetime.utcnow().replace(microsecond=0)
-        with urllib.request.urlopen(url) as res:
-            binary = res.readall()
-            compressed_binary = zlib.compress(binary)
-            dt_modified = res.info().get('Last-Modified', None)
-            if dt_modified is not None:
-                try:
-                    dt_modified = datetime.datetime.strptime(dt_modified, '%a, %d %b %Y %H:%M:%S GMT')
-                except:
-                    pass
+        (binary, res) = url_readall(url)
+        compressed_binary = zlib.compress(binary)
+        dt_modified = res.info().get('Last-Modified', None)
+        if dt_modified is not None:
+            try:
+                dt_modified = datetime.datetime.strptime(dt_modified, '%a, %d %b %Y %H:%M:%S GMT')
+            except:
+                pass
         hash_value = hashlib.sha512(binary).hexdigest()[0:64]
         return (binary, compressed_binary, hash_value, dt_accessed, dt_modified)
 
@@ -75,8 +87,8 @@ class DummyCache:
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel_fetches)
 
     def fetch(self, url, use_cache_newer_than=None):
-        with urllib.request.urlopen(url) as res:
-            return res.readall()
+        (data, res) = url_readall(url)
+        return data
 
     def fetch_all(self, url_list, use_cache_newer_than_list=None, use_cache_newer_than_map=None):
         futures = [self.executor.submit(self.fetch, url) for url in url_list]
