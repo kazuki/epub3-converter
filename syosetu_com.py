@@ -132,6 +132,8 @@ class SyosetuCom:
                             if 'alt' in n.attrib:
                                 writer.att('alt', n.attrib['alt'])
                             writer.end()
+                if n.tail is not None:
+                    writer.text(n.tail.strip())
                 continue
 
             # ignore

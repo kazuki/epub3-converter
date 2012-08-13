@@ -32,10 +32,17 @@ class SimpleXMLWriter:
         if text is not None: self.text(text)
     def end(self): self.__pop()
     def text(self, text):
-        if self.current.text is None:
-            self.current.text = text
+        if len(list(self.current)) == 0:
+            if self.current.text is None:
+                self.current.text = text
+            else:
+                self.current.text += text
         else:
-            self.current.text += text
+            last_node = list(self.current)[len(list(self.current))-1]
+            if last_node.tail is None:
+                last_node.tail = text
+            else:
+                last_node.tail += text
     def att(self, name, value):
         self.current.attrib[name] = value
     def element(self, name, atts={}, text=None):
@@ -59,6 +66,8 @@ class SimpleXMLWriter:
                     xml += self.__to_string(child, next_indent)
                 xml += indent
             xml += '</' + node.tag + '>\n'
+        if node.tail is not None and len(node.tail) > 0:
+            xml += SAX.escape(node.tail)
         return xml
         
     def __str__(self):
