@@ -60,10 +60,11 @@ class SimpleGW:
         code = None
         if url.hostname.endswith('.syosetu.com'):
             service_name = SimpleGW.SYOSETU_COM
-            if url.path.startswith('/n'):
+            if url.path.startswith('/n') or url.path.startswith('/N'):
                 code = url.path[1:]
                 if code.find('/') > 0:
                     code = code[0:code.find('/')]
+                code = code.lower()
         elif url.hostname == 'www.mai-net.net':
             service_name = SimpleGW.MAI_NET
             code = parse_qs(url.query).get('all')[0]
