@@ -3,16 +3,17 @@ import concurrent.futures, os.path, shelve, sys, time
 from urllib.error import HTTPError
 
 def url_readall(url):
-    while True:
+    for retry_count in range(3):
         try:
             with urllib.request.urlopen(url) as res:
                 return (res.readall(), res)
         except HTTPError as ex:
             if ex.code in (503,):
                 sys.stderr.write('urlopen failed. retry...' + url + '\n');
-                time.sleep(3)
+                time.sleep(10)
             else:
                 raise ex
+    raise HTTPError(url, 503, None, None, None)
 
 class SimpleCache:
     def __init__(self, cache_dir = 'data',
@@ -75,8 +76,13 @@ class SimpleCache:
         for future in concurrent.futures.as_completed(futures):
             (url, cache_entry) = futures[future]
             if future.exception() is not None:
-                results[url] = None
-                continue
+                for tmp in futures:
+                    try:
+                        tmp.cancel()
+                    except:
+                        pass
+                print("error url =", url, ". cancelled all download task")
+                raise future.exception()
             (binary, compressed_binary, hash_value, dt_accessed, dt_modified) = future.result()
             self.__update_cache(url, cache_entry, compressed_binary, hash_value, dt_accessed, dt_modified)
             results[url] = binary

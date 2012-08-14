@@ -3,6 +3,7 @@
 
 import io, sys, os.path, urllib.parse
 from urllib.parse import parse_qs, urlparse
+from urllib.error import HTTPError
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import syosetu_com, mai_net, epub, style
@@ -48,6 +49,11 @@ class SimpleGW:
 <div style="border-top: 1px solid black; margin-top: 3em;font-size:small">
 <h2 style="font-size:medium;">ブックマークレット</h2>
 <p><a href="javascript:location.href%3D%22http%3A%2F%2Foikw.org%2Fepub3-converter%2F%3Furl%3D%22%2BencodeURIComponent%28location.href%29%3B">ブックマークレット</a></p>
+<h2 style="font-size:medium;">タイムアウトエラーが出た時</h2>
+<p>小説家になろう等のサイトではアクセス制限が設定されており、一定時間内に多くのページにアクセスしてしまうと、しばらくはアクセスできなくなるため、
+タイムアウトエラー等が発生する場合があります(主に100話以上の作品だとたいてい起こるみたいです）。その場合は、数分間時間をおいてから再試行するか、
+GitHubよりソースコードをダウンロードして各自のPC上で変換スクリプトを実行してみてください。このサーバは1つのIPアドレスを用いて運用しているため、
+比較的簡単にアクセス制限に引っかかってしまう可能性があります。</p>
 <h2 style="font-size:medium">ソースコードや不具合等の報告</h2>
 <p>ePub3変換プログラムのソースコードや，このサイトを構成するプログラム等は<a href="https://github.com/kazuki/epub3-converter" target="_blank">GitHub</a>にて公開しています．</p>
 <p>不具合等を見つけましたら<a href="https://github.com/kazuki/epub3-converter/issues" target="_blank">GitHubのバグ報告ページ</a>または，Twitter(@k_oi)，メール(k at oikw.org)へ報告すると，気が向いたときに修正するかもしれません．</p></div>
@@ -93,8 +99,19 @@ class SimpleGW:
                                       ('Content-Length', str(len(epub_binary))),
                                       ('Content-Disposition', 'attachment; filename*="' + filename + '"')])
             return [epub_binary]
+        except HTTPError as ex:
+            if ex.code in (503,):
+                start_response('503 Service Unavailable', [('Content-Type', 'text/plain; charset=UTF-8'),
+                                                           ('Pragma', 'no-cache'),
+                                                           ('Cache-Control', 'no-cache')])
+                err_msg = 'HTTP 503 (Service Unavailable): 指定された小説サイトが一時的な過負荷状態または、アクセス制限を受けています．\n'
+                err_msg += '1分以上時間をおいてから再試行するか、スクリプトを利用者のPC上で実行してください。'
+                return [err_msg.encode('UTF-8')]
+            raise ex
         except:
-            start_response('500 Internel Server Error', [('Content-Type', 'text/plain; charset=UTF-8')])
+            start_response('500 Internel Server Error', [('Content-Type', 'text/plain; charset=UTF-8'),
+                                                         ('Pragma', 'no-cache'),
+                                                         ('Cache-Control', 'no-cache')])
             err_msg = '変換エラー．指定したURLが正しくないか，リモートサーバへのアクセスに失敗しました．\n'
             err_msg += '再度試行してもエラーとなる場合は，作者まで変換できないURLを報告してください．'
             return [err_msg.encode('UTF-8')]
