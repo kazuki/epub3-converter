@@ -3,17 +3,30 @@ import concurrent.futures, os.path, shelve, sys, time
 from urllib.error import HTTPError
 
 def url_readall(url):
-    for retry_count in range(3):
+    last_exception_is_503 = False
+    max_retry_count = 3
+    for retry_count in range(max_retry_count):
+        last_retry = (retry_count == max_retry_count - 1)
+        sleep_time = 1
+        last_exception_is_503 = False
         try:
             with urllib.request.urlopen(url) as res:
                 return (res.readall(), res)
         except HTTPError as ex:
             if ex.code in (503,):
-                sys.stderr.write('urlopen failed. retry...' + url + '\n');
-                time.sleep(10)
-            else:
-                raise ex
-    raise HTTPError(url, 503, None, None, None)
+                sys.stderr.write('urlopen failed. retry...' + url + '\n')
+                sleep_time = 10
+                last_exception_is_503 = True
+        except Exception as ex:
+            sys.stderr.write(str(ex) + '. url=' + url + '\n')
+        except:
+            sys.stderr.write('unknown exception. url=' + url + '\n')
+        if not last_retry:
+            time.sleep(sleep_time)
+    if last_exception_is_503:
+        raise HTTPError(url, 503, None, None, None)
+    else:
+        raise HTTPError(url, 500, None, None, None)
 
 class SimpleCache:
     def __init__(self, cache_dir = 'data',
