@@ -97,65 +97,7 @@ class SyosetuCom:
                 if div.attrib['id'] == 'novel_view':
                     return div
         novel_view = find_novel_view()
-        writer = SimpleXMLWriter()
-        writer.write_xhtml_dtd_and_documentelement(lang='ja')
-        writer.start('head')
-        writer.element('title', text=title)
-        writer.write_link_stylesheet(css_file)
-        writer.end()
-        writer.start('body')
-        if title_tagname is not None:
-            writer.element(title_tagname, text=title)
-        prev_is_empty_p = False
-        paragraph_open = False
-        for n in novel_view.iter():
-            if n.tag in ('ruby', 'img'):
-                prev_is_empty_p = False
-                if not paragraph_open:
-                    paragraph_open = True
-                    writer.start('p')
-                if n.tag == 'ruby':
-                    writer.start('ruby')
-                    for ruby_child in n.iter():
-                        if ruby_child.text is None: continue
-                        if ruby_child.tag in ('rt', 'rp'):
-                            writer.element(ruby_child.tag, text=ruby_child.text)
-                        else:
-                            writer.text(ruby_child.text)
-                    writer.end()
-                elif n.tag == 'img':
-                    if 'src' in n.attrib:
-                        (imgfilename, mime, data) = self.__process_image(n.attrib['src'])
-                        if mime is not None and data is not None and imgfilename is not None:
-                            package.manifest.add_item(imgfilename, data, media_type=mime)
-                            writer.start('img', atts={'src':imgfilename})
-                            if 'alt' in n.attrib:
-                                writer.att('alt', n.attrib['alt'])
-                            writer.end()
-                if n.tail is not None:
-                    writer.text(n.tail.strip())
-                continue
-
-            # ignore
-            if n.tag in ('rb', 'rt', 'rp'):
-                continue
-
-            if paragraph_open and n.tag == 'br':
-                writer.end()
-                paragraph_open = False
-            text = n.text
-            if text is None: text = n.tail
-            if text is None and prev_is_empty_p: continue
-            if not paragraph_open:
-                writer.start('p')
-                paragraph_open = True
-            if text is not None:
-                writer.text(text.strip())
-                prev_is_empty_p = False
-            else:
-                prev_is_empty_p = True
-        writer.end()
-        package.manifest.add_item(filename, str(writer))
+        create_simple_page_from_html(package, filename, title, title_tagname, css_file, novel_view)
 
     def __process_short_story(self, ncode, title, use_cache_newer_than, css_map, package):
         nav = EPUBNav('toc', '目次', 'ja', css_map.toc_css())

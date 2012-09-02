@@ -18,14 +18,6 @@ class MaiNet:
             self.date   = None
     def __parse(self, tree):
         posts = []
-        def ParseBody(root):
-            body = ''
-            for e in root.iter():
-                if e.text is not None: body += e.text
-                if e.tag == 'br': body += '\n'
-                if e.tail is not None: body += e.tail
-            return body
-
         cur = MaiNet.PostData()
         for e in tree.iter():
             if e.tag == 'td':
@@ -37,7 +29,7 @@ class MaiNet:
                     cur.author = e.find('table').find('tr').find('td').find('tt').text[6:].strip()
                     cur.date   = datetime.datetime(int(t[0:4]), int(t[5:7]), int(t[8:10]), int(t[11:13]),
                                                    int(t[14:16]), tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
-                    cur.body   = ParseBody(e.find('blockquote').find('div'))
+                    cur.body   = e.find('blockquote').find('div')
                     if '◆' in cur.author: cur.author = cur.author[0:cur.author.find('◆')]
                     posts.append(cur)
                     cur = MaiNet.PostData()
@@ -67,8 +59,7 @@ class MaiNet:
             filename = str(autoid).zfill(id_width) + '.xhtml'
             autoid += 1
             nav.add_child(post.title, filename)
-            data = create_simple_page(post.title, 'h2', css_map.page_css(), post.body.split('\n'))
-            package.manifest.add_item(filename, data)
+            create_simple_page_from_html(package, filename, post.title, 'h2', css_map.page_css(), post.body)
 
         compatible_toc = EPUBCompatibleNav([nav], package.metadata, package.manifest)
         package.manifest.add_item('toc.ncx', str(compatible_toc), is_toc=True)
